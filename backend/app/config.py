@@ -2,7 +2,9 @@
 Application configuration using pydantic-settings
 """
 
-from typing import List
+
+from typing import List, Any, Union
+from pydantic import field_validator, AnyHttpUrl
 from pydantic_settings import BaseSettings
 
 
@@ -17,6 +19,15 @@ class Settings(BaseSettings):
     
     # CORS
     cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: Any) -> Any:
+        if isinstance(v, str) and not v.startswith("["):
+            return [i.strip() for i in v.split(",")]
+        elif isinstance(v, (list, str)):
+            return v
+        raise ValueError(v)
     
     # Server
     host: str = "0.0.0.0"
