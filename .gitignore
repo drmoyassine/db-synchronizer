@@ -1,0 +1,68 @@
+# Environment
+.env
+.env.local
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Coverage
+coverage/
+*.lcov
+
+# Debug/Temp
+debug_*.py
+debug_*.txt
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!*.example.json
+!api_response.json # Wait, actually api_response.json was in the root, I'll leave it as is for now or exclude specifically.
+
+# Misc
+.DS_Store
+Thumbs.db
+*.log
