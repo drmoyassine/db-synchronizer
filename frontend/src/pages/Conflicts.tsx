@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Check, X, Loader2 } from 'lucide-react'
+import { AlertTriangle, Check, Loader2 } from 'lucide-react'
 import { syncApi, syncConfigsApi, Conflict } from '../api'
 import { formatDistanceToNow } from 'date-fns'
 import { useState } from 'react'
