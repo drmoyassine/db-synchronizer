@@ -1,7 +1,7 @@
 import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { datasourcesApi, viewsApi } from '../api';
-import { X, Loader2, AlertCircle, Filter, Plus, Trash2, Save, CheckCircle, Table, Copy, RefreshCw, Database, Edit2, Link as LinkIcon } from 'lucide-react';
+import { X, Loader2, AlertCircle, Filter, Plus, Trash2, CheckCircle, Table, Copy, RefreshCw, Database, Edit2, Link as LinkIcon, Info, RotateCcw, Check, Save } from 'lucide-react';
 import { RecordEditor } from './RecordEditor';
 
 interface DataPreviewModalProps {
@@ -63,8 +63,8 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
     // @ts-ignore
     const API_DOCS_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace('/api', '') + '/docs/views';
     const SWAGGER_ANCHOR = viewId
-        ? `#/Views/create_view_record_api_views__view_id__records_post`
-        : `#/Views`;
+        ? `# / Views / create_view_record_api_views__view_id__records_post`
+        : `# / Views`;
 
     React.useEffect(() => {
         if (isOpen) {
@@ -223,11 +223,11 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                             {currentStep !== 'tables' && (
                                 <button
                                     onClick={() => setShowSaveForm(!showSaveForm)}
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${filters.length > 0 || currentStep === 'editor'
-                                        ? 'bg-primary-50 border-primary-200 text-primary-600 hover:bg-primary-100'
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${selectedTable
+                                        ? 'bg-primary-50 border-primary-200 text-primary-600 hover:bg-primary-100 shadow-sm'
                                         : 'bg-gray-50 border-gray-200 text-gray-500 opacity-50 cursor-not-allowed'
                                         }`}
-                                    disabled={filters.length === 0 && currentStep !== 'editor'}
+                                    disabled={!selectedTable}
                                 >
                                     <Save className="w-3.5 h-3.5" />
                                     Save View
@@ -243,10 +243,44 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                     </div>
                 </div>
 
+                {/* Global Save Form Banner */}
+                {showSaveForm && (
+                    <div className="bg-primary-600 p-4 animate-in slide-in-from-top duration-300">
+                        <div className="max-w-4xl mx-auto flex items-center gap-4">
+                            <div className="flex-1">
+                                <label className="block text-[10px] font-bold text-primary-100 uppercase tracking-wider mb-1">New View Name</label>
+                                <input
+                                    type="text"
+                                    value={viewName}
+                                    onChange={(e) => setViewName(e.target.value)}
+                                    placeholder="e.g., Active Institutions, Marketing Feed..."
+                                    className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder:text-white/40 focus:ring-2 focus:ring-white/30 outline-none text-sm font-medium transition-all"
+                                    autoFocus
+                                />
+                            </div>
+                            <div className="flex items-end gap-2 pt-5">
+                                <button
+                                    onClick={handleSaveView}
+                                    disabled={isSaving || !viewName}
+                                    className="px-6 py-2 bg-white text-primary-600 hover:bg-primary-50 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-bold rounded-lg shadow-lg transition-all"
+                                >
+                                    {isSaving ? 'Saving...' : 'Confirm Save'}
+                                </button>
+                                <button
+                                    onClick={() => setShowSaveForm(false)}
+                                    className="px-4 py-2 bg-primary-700 text-white hover:bg-primary-800 text-xs font-bold rounded-lg transition-all"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Content Area */}
                 <div className="flex-1 overflow-hidden flex flex-col">
                     {currentStep === 'tables' ? (
-                        <div className="flex-1 p-6 space-y-4 overflow-y-auto">
+                        <div className="flex-1 p-6 space-y-4 overflow-y-auto font-sans">
                             <div className="flex items-center justify-between mb-4">
                                 <h4 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-tight">Select Table / Collection</h4>
                                 <div className="relative">
@@ -305,7 +339,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                             {/* Sidebar */}
                             <div className="w-64 border-r border-gray-100 dark:border-gray-700 bg-gray-50/30 dark:bg-gray-900/10 flex flex-col overflow-hidden">
                                 <div className="p-3 border-b border-gray-100 dark:border-gray-700">
-                                    <div className="relative">
+                                    <div className="relative font-sans">
                                         <Table className="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" />
                                         <input
                                             type="text"
@@ -344,7 +378,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                             </div>
 
                             {/* Main Records Panel */}
-                            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                            <div className="flex-1 flex flex-col min-w-0 overflow-hidden font-sans">
                                 <div className="flex items-center px-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/10 dark:bg-gray-900/10">
                                     <button onClick={() => setActiveTab('data')} className={`px-4 py-2 text-xs font-bold border-b-2 ${activeTab === 'data' ? 'text-primary-600 border-primary-600' : 'text-gray-400 border-transparent hover:text-gray-600'}`}>Data Preview</button>
                                     <button onClick={() => setActiveTab('links')} className={`px-4 py-2 text-xs font-bold border-b-2 ${activeTab === 'links' ? 'text-primary-600 border-primary-600' : 'text-gray-400 border-transparent hover:text-gray-600'}`}>Linked Records</button>
@@ -377,18 +411,6 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                     ))}
                                                     <button onClick={addFilter} className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-primary-600 hover:bg-primary-50 rounded-lg"><Plus size={14} /> Add Filter</button>
                                                 </div>
-                                                {showSaveForm && (
-                                                    <div className="mt-4 p-4 bg-primary-50 dark:bg-primary-900/20 border border-primary-100 rounded-xl flex items-center gap-4">
-                                                        <div className="flex-1">
-                                                            <label className="block text-xs font-bold text-primary-700 mb-1">View Name</label>
-                                                            <input type="text" value={viewName} onChange={(e) => setViewName(e.target.value)} placeholder="View name..." className="w-full px-3 py-2 text-sm bg-white border border-primary-200 rounded-lg outline-none" />
-                                                        </div>
-                                                        <div className="flex items-end gap-2 pt-5">
-                                                            <button onClick={handleSaveView} disabled={isSaving || !viewName} className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold rounded-lg">{isSaving ? 'Saving...' : 'Confirm Save'}</button>
-                                                            <button onClick={() => setShowSaveForm(false)} className="px-4 py-2 bg-gray-100 rounded-lg text-xs font-bold">Cancel</button>
-                                                        </div>
-                                                    </div>
-                                                )}
                                             </div>
                                             <div className="flex-1 overflow-auto p-4">
                                                 {isLoading ? (
@@ -414,8 +436,16 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                                             </td>
                                                                         ))}
                                                                         {hoveredRow === i && (
-                                                                            <td className="sticky right-0 top-0 h-full flex items-center pr-4 z-20">
-                                                                                <button onClick={() => { setEditingRecord(record); setCurrentStep('editor'); }} className="p-1.5 bg-white border border-gray-200 shadow-lg rounded-lg text-primary-600 hover:scale-110 transition-all"><Edit2 size={14} /></button>
+                                                                            <td className="absolute right-0 top-0 h-full flex items-center pr-4 z-20">
+                                                                                <button
+                                                                                    onClick={() => {
+                                                                                        setEditingRecord(record);
+                                                                                        setCurrentStep('editor');
+                                                                                    }}
+                                                                                    className="p-1.5 bg-white border border-gray-200 shadow-lg rounded-lg text-primary-600 hover:scale-110 transition-all"
+                                                                                >
+                                                                                    <Edit2 size={14} />
+                                                                                </button>
                                                                             </td>
                                                                         )}
                                                                     </tr>
@@ -432,23 +462,54 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                             <div className="grid gap-3">
                                                 {Object.entries(linkedViews).map(([key, config]) => (
                                                     <div key={key} className="p-3 border border-gray-100 rounded-xl flex items-center justify-between">
-                                                        <div className="flex items-center gap-3"><LinkIcon size={16} /><div><div className="text-[10px] font-bold">{key}</div><div className="text-[9px] text-gray-400">{config.view_id}</div></div></div>
-                                                        <button onClick={() => { const { [key]: _, ...rest } = linkedViews; setLinkedViews(rest); }} className="text-gray-300 hover:text-red-500"><Trash2 size={14} /></button>
+                                                        <div className="flex items-center gap-3">
+                                                            <LinkIcon size={16} />
+                                                            <div>
+                                                                <div className="text-[10px] font-bold">{key}</div>
+                                                                <div className="text-[9px] text-gray-400">{config.view_id}</div>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => {
+                                                                const { [key]: _, ...rest } = linkedViews;
+                                                                setLinkedViews(rest);
+                                                            }}
+                                                            className="text-gray-300 hover:text-red-500"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
                                                     </div>
                                                 ))}
-                                                <button onClick={() => {
-                                                    const k = prompt("Field (e.g. acf):"); if (!k) return;
-                                                    const v = prompt("View UUID:"); if (!v) return;
-                                                    setLinkedViews(p => ({ ...p, [k]: { view_id: v, join_on: 'id', target_key: 'id' } }));
-                                                }} className="p-4 border-2 border-dashed border-gray-100 rounded-xl text-gray-400 text-xs hover:border-primary-500 hover:text-primary-600 transition-all">+ Add Linked Data View</button>
+                                                <button
+                                                    onClick={() => {
+                                                        const k = prompt("Field (e.g. acf):"); if (!k) return;
+                                                        const v = prompt("View UUID:"); if (!v) return;
+                                                        setLinkedViews(p => ({ ...p, [k]: { view_id: v, join_on: 'id', target_key: 'id' } }));
+                                                    }}
+                                                    className="p-4 border-2 border-dashed border-gray-100 rounded-xl text-gray-400 text-xs hover:border-primary-500 hover:text-primary-600 transition-all font-sans"
+                                                >
+                                                    + Add Linked Data View
+                                                </button>
                                             </div>
                                         </div>
                                     ) : activeTab === 'recipe' ? (
-                                        <div className="p-6 h-full flex flex-col"><h4 className="text-sm font-bold mb-4 uppercase">Recipes</h4><div className="flex-1 bg-gray-50 rounded-xl p-4 font-mono text-[11px] opacity-50 relative"><div className="absolute top-4 right-4 text-[10px] font-bold text-primary-600 bg-primary-50 px-2 py-1 rounded">COMING SOON</div><pre>query {'{\n  posts {\n    title\n    content\n  }\n}'}</pre></div></div>
+                                        <div className="p-6 h-full flex flex-col">
+                                            <h4 className="text-sm font-bold mb-4 uppercase">Recipes</h4>
+                                            <div className="flex-1 bg-gray-50 rounded-xl p-4 font-mono text-[11px] opacity-50 relative">
+                                                <div className="absolute top-4 right-4 text-[10px] font-bold text-primary-600 bg-primary-50 px-2 py-1 rounded">COMING SOON</div>
+                                                <pre>query {'{\n  posts {\n    title\n    content\n  }\n}'}</pre>
+                                            </div>
+                                        </div>
                                     ) : (
                                         <div className="h-full flex flex-col">
-                                            <div className="p-3 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between"><span className="text-[10px] font-bold text-gray-400">REST API</span><code className="text-[10px] text-primary-600 font-mono italic">endpoint: /api/views/{viewId || '{id}'}/records</code></div>
-                                            <iframe src={`${API_DOCS_URL}${viewId ? `?id=${viewId}` : ''}${SWAGGER_ANCHOR}`} className="flex-1 w-full border-none" />
+                                            <div className="p-3 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+                                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">REST API Documentation</span>
+                                                <code className="text-[10px] text-primary-600 font-mono italic">endpoint: /api/views/{viewId || '{id}'}/records</code>
+                                            </div>
+                                            <iframe
+                                                src={`${API_DOCS_URL}${viewId ? `?id=${viewId}` : ''}${SWAGGER_ANCHOR}`}
+                                                className="flex-1 w-full border-none"
+                                            />
                                         </div>
                                     )}
                                 </div>

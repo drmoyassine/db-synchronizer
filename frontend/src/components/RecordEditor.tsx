@@ -1,6 +1,6 @@
 import React from 'react';
 import { ExpressionEditor } from './ExpressionEditor';
-import { X, Save, Info, Link as LinkIcon, Plus } from 'lucide-react';
+import { X, Save, Info, Link as LinkIcon, Plus, RotateCcw, Check } from 'lucide-react';
 import { TableSchema } from '../types';
 
 interface RecordEditorProps {
@@ -50,11 +50,19 @@ export const RecordEditor: React.FC<RecordEditorProps> = ({
                 </div>
                 <div className="flex items-center gap-2">
                     <button
-                        onClick={handleSave}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold rounded-lg transition-all"
+                        onClick={() => setMappings(currentMappings)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-xs font-bold rounded-lg transition-all"
+                        title="Reset to initial mappings"
                     >
-                        <Save className="w-3.5 h-3.5" />
-                        Save Mappings
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Reset
+                    </button>
+                    <button
+                        onClick={handleSave}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg transition-all shadow-sm"
+                    >
+                        <Check className="w-3.5 h-3.5" />
+                        Apply Mappings
                     </button>
                     <button
                         onClick={onCancel}
