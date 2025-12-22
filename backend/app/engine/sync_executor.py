@@ -20,12 +20,12 @@ from app.engine.field_mapper import FieldMapper
 from app.engine.conflict_resolver import ConflictResolver, ConflictRequiresManualResolution
 
 
+from app.services.state_manager import StateManager
+from app.services.expression_engine import ExpressionEngine
+
 async def execute_sync(job_id: str, config_id: str) -> None:
     """
-    Execute a sync job from master to slave.
-    
-    This function runs as a background task and updates the job status
-    as it progresses.
+    Execute a sync job from master to slave using Redis as an intermediate buffer.
     """
     async with async_session() as db:
         # Load job and config
@@ -62,6 +62,10 @@ async def execute_sync(job_id: str, config_id: str) -> None:
         await db.commit()
         
         try:
+            # Initialize services
+            state_manager = StateManager(job_id)
+            expression_engine = ExpressionEngine()
+            
             # Initialize adapters
             master_adapter = get_adapter(master_ds)
             slave_adapter = get_adapter(slave_ds)
@@ -74,7 +78,6 @@ async def execute_sync(job_id: str, config_id: str) -> None:
                 # Prepare filters from views if available
                 master_filters = {}
                 if config.master_view:
-                    # Simple conversion of JSON filters to 'where' dict for adapters
                     for f in config.master_view.filters:
                         if isinstance(f, dict) and f.get("field") and f.get("value"):
                             master_filters[f["field"]] = f["value"]
@@ -83,10 +86,9 @@ async def execute_sync(job_id: str, config_id: str) -> None:
                 job.total_records = await master_adapter.count_records(config.master_table, where=master_filters)
                 await db.commit()
                 
-                # Process in batches
+                # Step 1: Capture from Master to Redis
                 offset = 0
                 while True:
-                    # Read batch from master
                     master_records = await master_adapter.read_records(
                         table=config.master_table,
                         columns=mapper.get_master_columns(),
@@ -98,28 +100,44 @@ async def execute_sync(job_id: str, config_id: str) -> None:
                     if not master_records:
                         break
                     
-                    # Process each record
                     for master_record in master_records:
-                        try:
-                            await _sync_record(
-                                db=db,
-                                job=job,
-                                config=config,
-                                master_adapter=master_adapter,
-                                slave_adapter=slave_adapter,
-                                mapper=mapper,
-                                resolver=resolver,
-                                master_record=master_record,
-                            )
-                        except Exception as e:
-                            job.error_count += 1
-                            # Log but continue
+                        # Get primary key for Redis storage
+                        key_mapping = mapper.get_key_mapping()
+                        pk_col = key_mapping.master_column if key_mapping else config.master_pk_column
+                        record_id = str(master_record.get(pk_col))
                         
+                        # Capture in Redis
+                        await state_manager.capture_record(record_id, master_record)
                         job.processed_records += 1
-                    
-                    # Commit progress
+                        
                     await db.commit()
                     offset += config.batch_size
+
+                # Step 2: Resolve and Flush to Slave
+                captured_ids = await state_manager.list_captured_ids()
+                for rid in captured_ids:
+                    try:
+                        record_state = await state_manager.get_record(rid)
+                        if not record_state:
+                            continue
+                            
+                        master_record = record_state["data"]
+                        
+                        await _sync_record(
+                            db=db,
+                            job=job,
+                            config=config,
+                            master_adapter=master_adapter,
+                            slave_adapter=slave_adapter,
+                            mapper=mapper,
+                            resolver=resolver,
+                            master_record=master_record,
+                        )
+                    except Exception as e:
+                        job.error_count += 1
+                        logger.error(f"Error processing record {rid}: {e}")
+                    
+                await db.commit()
             
             # Handle deletions if enabled
             if config.sync_deletes:
@@ -135,14 +153,13 @@ async def execute_sync(job_id: str, config_id: str) -> None:
             # Mark job complete
             job.status = JobStatus.COMPLETED
             job.completed_at = datetime.utcnow()
-            
-            # Update config last sync time
             config.last_sync_at = datetime.utcnow()
             
         except Exception as e:
             job.status = JobStatus.FAILED
             job.error_message = str(e)
             job.completed_at = datetime.utcnow()
+            logger.exception("Sync execution failed")
         
         await db.commit()
 

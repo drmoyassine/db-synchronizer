@@ -4,6 +4,7 @@ import { Plus, RefreshCw, Play, Trash2, Loader2, Eye } from 'lucide-react'
 import { syncConfigsApi, syncApi, datasourcesApi, viewsApi, DatasourceView } from '../api'
 import DataPreviewModal from '../components/DataPreviewModal'
 import { formatDistanceToNow } from 'date-fns'
+import { ExpressionEditor } from '../components/ExpressionEditor'
 
 const STRATEGY_LABELS: Record<string, string> = {
     source_wins: 'Source Wins',
@@ -540,12 +541,12 @@ function AddSyncConfigModal({
                                         </select>
                                     </div>
                                     <div className="flex-[1.5]">
-                                        <input
-                                            type="text"
+                                        <ExpressionEditor
                                             value={mapping.transform || ''}
-                                            onChange={(e) => updateMapping(index, 'transform', e.target.value)}
-                                            placeholder="Transform (e.g. template:{@value})"
-                                            className="w-full px-2 py-1.5 text-sm border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700"
+                                            onChange={(val: string) => updateMapping(index, 'transform', val)}
+                                            variables={masterSchema?.columns.map(c => ({ name: c.name, type: c.type })) || []}
+                                            placeholder="Transform (e.g. {{ master.price * 1.2 }})"
+                                            className="min-w-[200px]"
                                         />
                                     </div>
                                     <label className="flex items-center gap-1.5 text-xs text-gray-500 whitespace-nowrap bg-white dark:bg-gray-800 px-2 py-1.5 rounded-lg border border-gray-100 dark:border-gray-700">

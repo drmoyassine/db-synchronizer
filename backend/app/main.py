@@ -15,6 +15,13 @@ from app.routers import (
     views as views_router,
     settings as settings_api_router
 )
+from app.middleware.error_handler import (
+    global_exception_handler,
+    validation_exception_handler,
+    database_exception_handler
+)
+from fastapi.exceptions import RequestValidationError
+from sqlalchemy.exc import SQLAlchemyError
 
 # Configure logging
 logging.basicConfig(
@@ -61,6 +68,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Exception handlers
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(SQLAlchemyError, database_exception_handler)
+app.add_exception_handler(Exception, global_exception_handler)
 
 # Include routers
 logger.info("Including routers...")

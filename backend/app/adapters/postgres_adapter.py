@@ -6,11 +6,9 @@ from typing import Any, Dict, List, Optional, Union
 import logging
 import asyncpg
 
-from app.adapters.base import DatabaseAdapter
-from app.models.datasource import Datasource
+from app.adapters.base import SQLAdapter
 
-
-class PostgresAdapter(DatabaseAdapter):
+class PostgresAdapter(SQLAdapter):
     """PostgreSQL database adapter using asyncpg."""
     
     def __init__(self, datasource: "Datasource"):
@@ -20,7 +18,7 @@ class PostgresAdapter(DatabaseAdapter):
     
     async def connect(self) -> None:
         """Establish connection pool to PostgreSQL."""
-        host = self.datasource.host
+        host = self._sanitize_host(self.datasource.host)
         port = self.datasource.port
         db_name = self.datasource.database
         user = self.datasource.username
@@ -30,13 +28,6 @@ class PostgresAdapter(DatabaseAdapter):
         if not host:
             self.logger.error("Connection failed: Host is empty")
             raise ValueError("Database host is required")
-            
-        if "://" in host or host.startswith(("http://", "https://")):
-            self.logger.warning(f"Host '{host}' appears to be a URL, not a hostname. This may cause getaddrinfo to fail.")
-            # Simple sanitization - remove protocol if present
-            if "://" in host:
-                host = host.split("://")[-1].split("/")[0]
-                self.logger.info(f"Sanitized host to: '{host}'")
 
         try:
             self._pool = await asyncpg.create_pool(
@@ -107,45 +98,6 @@ class PostgresAdapter(DatabaseAdapter):
                 ]
             }
     
-    def _build_where_clause(self, where: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]]) -> tuple[str, List[Any]]:
-        """Helper to build WHERE clause from structured filters."""
-        if not where:
-            return "", []
-            
-        conditions = []
-        params = []
-        
-        filter_list = where if isinstance(where, list) else [{"field": k, "operator": "==", "value": v} for k, v in where.items()]
-        
-        for f in filter_list:
-            k = f.get("field")
-            v = f.get("value")
-            op = f.get("operator", "==")
-            
-            if not k or v is None:
-                continue
-            
-            p_idx = len(params) + 1
-            if op == "==":
-                conditions.append(f'"{k}" = ${p_idx}')
-                params.append(v)
-            elif op == "!=":
-                conditions.append(f'"{k}" != ${p_idx}')
-                params.append(v)
-            elif op == ">":
-                conditions.append(f'"{k}" > ${p_idx}')
-                params.append(v)
-            elif op == "<":
-                conditions.append(f'"{k}" < ${p_idx}')
-                params.append(v)
-            elif op == "contains":
-                conditions.append(f'"{k}"::text ILIKE ${p_idx}')
-                params.append(f"%{v}%")
-        
-        if not conditions:
-            return "", []
-            
-        return " WHERE " + " AND ".join(conditions), params
 
     async def read_records(
         self,
@@ -158,9 +110,8 @@ class PostgresAdapter(DatabaseAdapter):
         """Read records from table."""
         cols = ", ".join(f'"{c}"' for c in columns) if columns else "*"
         query = f'SELECT {cols} FROM "{table}"'
-        params = []
         
-        where_clause, params = self._build_where_clause(where)
+        where_clause, params = self._build_where_clause(where, use_index=True)
         query += where_clause
         
         query += f" LIMIT {limit} OFFSET {offset}"
@@ -194,7 +145,6 @@ class PostgresAdapter(DatabaseAdapter):
         values = list(record.values())
         
         placeholders = ", ".join(f"${i}" for i in range(1, len(values) + 1))
-        col_list = ", ".join(columns)
         
         # Build update clause for non-key columns
         update_cols = [c for c in columns if c != key_column]
@@ -229,13 +179,12 @@ class PostgresAdapter(DatabaseAdapter):
     async def count_records(
         self,
         table: str,
-        where: Optional[Dict[str, Any]] = None,
+        where: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]] = None,
     ) -> int:
         """Count records in table."""
         query = f'SELECT COUNT(*) FROM "{table}"'
-        params = []
         
-        where_clause, params = self._build_where_clause(where)
+        where_clause, params = self._build_where_clause(where, use_index=True)
         query += where_clause
         
         async with self._pool.acquire() as conn:

@@ -10,7 +10,9 @@ from app.adapters.base import DatabaseAdapter
 from app.models.datasource import Datasource
 
 
-class WordPressAdapter(DatabaseAdapter):
+from app.adapters.base import SQLAdapter
+
+class WordPressAdapter(SQLAdapter):
     """
     WordPress/MySQL database adapter using aiomysql.
     
@@ -20,25 +22,15 @@ class WordPressAdapter(DatabaseAdapter):
     def __init__(self, datasource: "Datasource"):
         super().__init__(datasource)
         import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"DEBUG: Initializing WordPressAdapter for {datasource.name}")
-        if hasattr(self, '_build_where_clause'):
-            logger.error("DEBUG: CRITICAL - _build_where_clause FOUND on WordPressAdapter!")
-        else:
-            logger.info("DEBUG: _build_where_clause NOT found on WordPressAdapter (Correct)")
+        self.logger = logging.getLogger(f"app.adapters.wordpress.{self.datasource.name}")
         
         self._pool: Optional[aiomysql.Pool] = None
         self._prefix = datasource.table_prefix or "wp_"
     
     async def connect(self) -> None:
         """Establish connection pool to MySQL."""
-        host = self.datasource.host
+        host = self._sanitize_host(self.datasource.host)
         port = self.datasource.port
-        
-        # Simple sanitization - remove protocol if present
-        if host and ("://" in host or host.startswith(("http://", "https://"))):
-            if "://" in host:
-                host = host.split("://")[-1].split("/")[0]
         
         self._pool = await aiomysql.create_pool(
             host=host,
@@ -250,38 +242,6 @@ class WordPressAdapter(DatabaseAdapter):
                 )
                 return result > 0
     
-    def _build_where_clause(self, where: Optional[Union[Dict[str, Any], List[Dict[str, Any]]]]) -> tuple[str, List[Any]]:
-        """
-        Fallback for legacy calls to _build_where_clause.
-        """
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.warning(f"deprecated _build_where_clause called on WordPressAdapter! 'where'={where}")
-        
-        # Basic implementation mapping to SQL
-        if not where:
-            return "", []
-            
-        conditions = []
-        params = []
-        filter_list = where if isinstance(where, list) else [{"field": k, "operator": "==", "value": v} for k, v in where.items()]
-        
-        for f in filter_list:
-            k, v, op = f.get("field"), f.get("value"), f.get("operator", "==")
-            if not k or v is None: continue
-            
-            p_idx = "%s"
-            if op == "==":
-                conditions.append(f"`{k}` = {p_idx}")
-                params.append(v)
-            elif op == "contains":
-                conditions.append(f"`{k}` LIKE {p_idx}")
-                params.append(f"%{v}%")
-            # ... minimal support
-            
-        if not conditions:
-            return "", []
-        return " WHERE " + " AND ".join(conditions), params
 
     
     # WordPress-specific helper methods
