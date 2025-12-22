@@ -12,7 +12,7 @@ services:
     networks:
       - db-sync-net
     volumes:
-      - ./data:/app/data
+      - db_data:/app/data
       # Remove volume mount for production-ready state, but keep for dev if needed
       # - ./backend:/app 
     environment:
@@ -53,4 +53,4 @@ networks:
     driver: bridge
 
 volumes:
-  data:
+  db_data:
