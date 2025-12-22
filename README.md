@@ -5,11 +5,11 @@ A standalone FastAPI microservice for multi-source database synchronization with
 ## Features
 
 - **Multi-source sync**: Supabase ↔ PostgreSQL ↔ WordPress ↔ Neon
-- **Field mapping engine**: Map columns between different schemas with transforms
+- **Jinja2 Expression Engine**: Map columns using powerful templates (e.g., `{{ master.price * 1.2 }}`) and `@field` shorthands
+- **Redis-Backed State Management**: High-performance, on-demand sync flow with TTL-based state tracking
 - **Conflict resolution**: 5 strategies (source wins, target wins, manual, merge, webhook)
-- **Async job orchestration**: Background sync with progress tracking
-- **Admin Web UI**: Visual management for datasources and sync configs
-- **Webhook triggers**: n8n, Zapier, ActivePieces integration
+- **Async job orchestration**: Background sync with standardized error handling
+- **Admin Web UI**: Visual management for datasources, sync configs, and active syncs with a "n8n-style" expression editor
 
 ## Project Structure
 
@@ -17,40 +17,35 @@ A standalone FastAPI microservice for multi-source database synchronization with
 db-synchronizer/
 ├── backend/           # FastAPI application
 │   ├── app/
-│   │   ├── adapters/  # Database adapters (Supabase, Postgres, WordPress, Neon)
+│   │   ├── adapters/  # Database adapters (SQLAdapter base, WordPress meta-joins)
 │   │   ├── engine/    # Sync engine (field mapper, conflict resolver, executor)
+│   │   ├── services/  # Core logic (ExpressionEngine, StateManager)
 │   │   ├── models/    # SQLAlchemy models
 │   │   ├── routers/   # API endpoints
-│   │   ├── schemas/   # Pydantic schemas
-│   │   └── tests/     # pytest tests
+│   │   └── middleware/# Global exception handling
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/          # React admin UI
 │   ├── src/
-│   │   ├── api/       # API client
-│   │   ├── components/
+│   │   ├── api/       # Modular API clients (client, sync, datasources, settings)
+│   │   ├── components/# Reusable UI (ExpressionEditor, DataPreviewModal)
+│   │   ├── types/     # Centralized TypeScript interfaces
 │   │   └── pages/     # Dashboard, Datasources, SyncConfigs, Conflicts, Jobs
 │   ├── package.json
 │   └── Dockerfile
 ├── docker-compose.yml
-└── .github/workflows/ci.yml
+└── .agent/            # Persistent agent context (memory, instructions)
 ```
 
 ## Key Components
 
 | Component | File | Description |
 |-----------|------|-------------|
-| FastAPI App | `backend/app/main.py` | Application entrypoint with routers |
-| Postgres Adapter | `backend/app/adapters/postgres_adapter.py` | asyncpg-based PostgreSQL adapter |
-| WordPress Adapter | `backend/app/adapters/wordpress_adapter.py` | MySQL adapter with wp_posts support |
-| Supabase Adapter | `backend/app/adapters/supabase_adapter.py` | Extends Postgres with REST API |
-| Neon Adapter | `backend/app/adapters/neon_adapter.py` | Serverless Postgres adapter |
-| Field Mapper | `backend/app/engine/field_mapper.py` | Column mapping with transforms |
-| Conflict Resolver | `backend/app/engine/conflict_resolver.py` | 5 resolution strategies + webhook |
-| Sync Executor | `backend/app/engine/sync_executor.py` | Batch processing with progress |
-| Admin Dashboard | `frontend/src/pages/Dashboard.tsx` | Stats and recent jobs |
-| Datasources UI | `frontend/src/pages/Datasources.tsx` | Connection management |
-| Conflicts UI | `frontend/src/pages/Conflicts.tsx` | Side-by-side resolution |
+| State Manager | `backend/app/services/state_manager.py` | Redis-backed sync state & TTL management |
+| Expression Engine | `backend/app/services/expression_engine.py` | Jinja2 template evaluation for transforms |
+| SQLAdapter | `backend/app/adapters/base.py` | Shared base for sanitized SQL operations |
+| Global Errors | `backend/app/middleware/error_handler.py` | Standardized JSON error responses |
+| Expression Editor | `frontend/src/components/ExpressionEditor.tsx` | n8n-style field mapping UI |
 
 ## Quick Start
 
@@ -102,26 +97,27 @@ Access interactive docs at http://localhost:8001/docs
 
 ## Configuration
 
-Create a `.env` file:
+Create a `.env` file (see `.env.example` for details):
 
 ```env
 # Backend
 DATABASE_URL=sqlite+aiosqlite:///./data/config.db
 SECRET_KEY=your-secret-key-change-in-production
 CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+REDIS_URL=redis://localhost:6379/0
+SYNC_STATE_TTL=14400
 
 # Frontend
 VITE_API_URL=http://localhost:8001
+```
 
 ## Architecture & Design Notes
 
 ### Redis-Powered Sync Workflow
-To maintain high performance and avoid database bloat during complex operations, the system follows a "Redis-first" sync strategy:
-- **User-Provided Redis**: Users connect their own Redis instance via the Admin UI.
-- **In-Memory Caching**: Active sync operations are handled entirely within Redis memory.
-- **Resolution Cycle**: Data remains in the Redis cache during conflict resolution and is only committed to the target database once all conflicts are resolved or skipped.
-- **Persistence**: Final sync results and audit logs are moved to the primary configuration database after the job completes.
-```
+The system follows a "Capture-Resolve-Flush" strategy using Redis:
+- **In-Memory Caching**: Records from the master are captured to Redis with a TTL.
+- **Resolution Cycle**: Data remains in Redis during conflict resolution, ensuring no source/target database bloat.
+- **Atomic Flush**: Once resolved, the record is upserted to the target and the Redis state is cleared.
 
 ## Usage Flow
 
