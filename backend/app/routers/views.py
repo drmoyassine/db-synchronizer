@@ -43,6 +43,14 @@ async def create_datasource_view(
     ds_result = await db.execute(select(Datasource).where(Datasource.id == datasource_id))
     if not ds_result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Datasource not found")
+    
+    # Check for duplicate name
+    existing_view = await db.execute(select(DatasourceView).where(DatasourceView.name == view.name))
+    if existing_view.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"A view with the name '{view.name}' already exists"
+        )
         
     db_view = DatasourceView(
         name=view.name,
@@ -89,6 +97,16 @@ async def update_datasource_view(
         
     # Update fields
     update_data = view_update.model_dump(exclude_unset=True)
+    
+    # Check for duplicate name if name is being updated
+    if "name" in update_data and update_data["name"] != db_view.name:
+        existing_view = await db.execute(select(DatasourceView).where(DatasourceView.name == update_data["name"]))
+        if existing_view.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"A view with the name '{update_data['name']}' already exists"
+            )
+
     for key, value in update_data.items():
         setattr(db_view, key, value)
         
