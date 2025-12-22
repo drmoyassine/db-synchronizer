@@ -1,7 +1,8 @@
 import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { datasourcesApi, viewsApi } from '../api';
-import { X, Loader2, AlertCircle, Filter, Plus, Trash2, Save, CheckCircle, Table, BookOpen, Copy, RefreshCw, Database } from 'lucide-react';
+import { X, Loader2, AlertCircle, Filter, Plus, Trash2, Save, CheckCircle, Table, BookOpen, Copy, RefreshCw, Database, Edit2, Link as LinkIcon } from 'lucide-react';
+import { RecordEditor } from './RecordEditor';
 
 interface DataPreviewModalProps {
     isOpen: boolean;
@@ -12,6 +13,8 @@ interface DataPreviewModalProps {
     onViewSaved?: () => void;
     initialFilters?: { field: string; operator: string; value: string }[];
     viewId?: string;
+    initialFieldMappings?: Record<string, string>;
+    initialLinkedViews?: Record<string, any>;
 }
 
 const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
@@ -22,7 +25,9 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
     datasourceName,
     onViewSaved,
     initialFilters,
-    viewId
+    viewId,
+    initialFieldMappings,
+    initialLinkedViews
 }) => {
     const queryClient = useQueryClient();
     const [filters, setFilters] = React.useState<{ field: string; operator: string; value: string }[]>([]);
@@ -30,10 +35,14 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
     const [isSaving, setIsSaving] = React.useState(false);
     const [showSaveForm, setShowSaveForm] = React.useState(false);
     const [saveSuccess, setSaveSuccess] = React.useState(false);
-    const [activeTab, setActiveTab] = React.useState<'data' | 'docs'>('data');
+    const [activeTab, setActiveTab] = React.useState<'data' | 'docs' | 'links' | 'recipe'>('data');
     const [copySuccess, setCopySuccess] = React.useState(false);
     const [selectedTable, setSelectedTable] = React.useState(table);
     const [tableSearch, setTableSearch] = React.useState('');
+    const [editingRecord, setEditingRecord] = React.useState<any | null>(null);
+    const [hoveredRow, setHoveredRow] = React.useState<number | null>(null);
+    const [fieldMappings, setFieldMappings] = React.useState<Record<string, string>>(initialFieldMappings || {});
+    const [linkedViews, setLinkedViews] = React.useState<Record<string, any>>(initialLinkedViews || {});
 
     const { data: tables } = useQuery({
         queryKey: ['datasourceTables', datasourceId],
@@ -58,10 +67,12 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
     React.useEffect(() => {
         if (isOpen) {
             setFilters(initialFilters || []);
+            setFieldMappings(initialFieldMappings || {});
+            setLinkedViews(initialLinkedViews || {});
             setActiveTab('data'); // Reset to data tab on open
             setSelectedTable(table);
         }
-    }, [isOpen, initialFilters, table]);
+    }, [isOpen, initialFilters, initialFieldMappings, initialLinkedViews, table]);
 
     const { data: schemaData } = useQuery({
         queryKey: ['tableSchema', datasourceId, selectedTable],
@@ -141,7 +152,9 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
             await viewsApi.create(datasourceId, {
                 name: viewName,
                 target_table: selectedTable,
-                filters: filters
+                filters: filters,
+                field_mappings: fieldMappings,
+                linked_views: linkedViews
             });
             setShowSaveForm(false);
             setViewName('');
@@ -153,6 +166,11 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
         } finally {
             setIsSaving(false);
         }
+    };
+
+    const handleSaveMappings = (mappings: Record<string, string>) => {
+        setFieldMappings(mappings);
+        setEditingRecord(null);
     };
 
     const refreshSchemaMutation = useMutation({
@@ -235,6 +253,26 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                         >
                             <Table className="w-3.5 h-3.5" />
                             Data Preview
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('links')}
+                            className={`flex items-center gap-2 px-4 py-2 text-xs font-bold transition-all border-b-2 ${activeTab === 'links'
+                                ? 'text-primary-600 border-primary-600'
+                                : 'text-gray-400 border-transparent hover:text-gray-600'
+                                }`}
+                        >
+                            <LinkIcon className="w-3.5 h-3.5" />
+                            Linked Records
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('recipe')}
+                            className={`flex items-center gap-2 px-4 py-2 text-xs font-bold transition-all border-b-2 ${activeTab === 'recipe'
+                                ? 'text-primary-600 border-primary-600'
+                                : 'text-gray-400 border-transparent hover:text-gray-600'
+                                }`}
+                        >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            Recipes
                         </button>
                         <button
                             onClick={() => setActiveTab('docs')}
@@ -429,7 +467,12 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                     </thead>
                                                     <tbody>
                                                         {filteredRecords.map((record, i) => (
-                                                            <tr key={i} className="hover:bg-gray-50/50 dark:hover:bg-gray-900/20 transition-colors">
+                                                            <tr
+                                                                key={i}
+                                                                onMouseEnter={() => setHoveredRow(i)}
+                                                                onMouseLeave={() => setHoveredRow(null)}
+                                                                className="hover:bg-gray-50/50 dark:hover:bg-gray-900/20 transition-colors relative"
+                                                            >
                                                                 {Object.values(record).map((value: any, j) => (
                                                                     <td key={j} className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300 border-b border-gray-50 dark:border-gray-700/50 max-w-xs truncate">
                                                                         {value === null ? (
@@ -443,6 +486,17 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                                         )}
                                                                     </td>
                                                                 ))}
+                                                                {hoveredRow === i && (
+                                                                    <td className="sticky right-0 top-0 h-full flex items-center pr-4 bg-gradient-to-l from-gray-50 dark:from-gray-900 to-transparent z-20">
+                                                                        <button
+                                                                            onClick={() => setEditingRecord(record)}
+                                                                            className="p-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 shadow-lg rounded-lg text-primary-600 hover:text-primary-700 hover:scale-110 transition-all animate-in fade-in slide-in-from-right-2"
+                                                                            title="Edit record mappings"
+                                                                        >
+                                                                            <Edit2 size={14} />
+                                                                        </button>
+                                                                    </td>
+                                                                )}
                                                             </tr>
                                                         ))}
                                                     </tbody>
@@ -450,8 +504,89 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                             </div>
                                         )}
                                     </>
+                                ) : activeTab === 'links' ? (
+                                    <div className="flex-1 flex flex-col p-6 space-y-4 overflow-y-auto">
+                                        <div className="flex items-center justify-between">
+                                            <div>
+                                                <h4 className="text-sm font-bold text-gray-900 dark:text-white">Linked Records (joins)</h4>
+                                                <p className="text-xs text-gray-500">Cross-source data is automatically merged via the backend.</p>
+                                            </div>
+                                            <button
+                                                className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-xs font-bold hover:bg-primary-700 flex items-center gap-2"
+                                                onClick={() => {
+                                                    const key = prompt("Field name for joined data (e.g. acf):");
+                                                    if (!key) return;
+                                                    const vId = prompt("Linked View UUID:");
+                                                    if (!vId) return;
+                                                    setLinkedViews(prev => ({
+                                                        ...prev,
+                                                        [key]: { view_id: vId, join_on: 'id', target_key: 'id' }
+                                                    }));
+                                                }}
+                                            >
+                                                <Plus size={14} /> Add Link
+                                            </button>
+                                        </div>
+
+                                        <div className="grid gap-3">
+                                            {Object.entries(linkedViews).map(([key, config]) => (
+                                                <div key={key} className="p-3 border border-gray-100 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 shadow-sm flex items-center justify-between">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded bg-primary-50 dark:bg-primary-900/40 flex items-center justify-center text-primary-600">
+                                                            <LinkIcon size={16} />
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-[10px] font-bold text-gray-900 dark:text-white uppercase tracking-wider">{key}</div>
+                                                            <div className="text-[9px] text-gray-400 font-mono">{config.view_id}</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="text-[10px] text-gray-400 px-2 py-0.5 bg-gray-50 dark:bg-gray-700/50 rounded">
+                                                            ID: <span className="font-mono text-primary-600">{config.join_on}</span>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => {
+                                                                const { [key]: _, ...rest } = linkedViews;
+                                                                setLinkedViews(rest);
+                                                            }}
+                                                            className="p-1 hover:bg-red-50 text-gray-300 hover:text-red-500 rounded transition-colors"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {Object.keys(linkedViews).length === 0 && (
+                                                <div className="py-12 text-center border-2 border-dashed border-gray-50 dark:border-gray-800 rounded-2xl">
+                                                    <LinkIcon className="mx-auto w-8 h-8 text-gray-200 mb-2" />
+                                                    <p className="text-xs text-gray-400">No linked views configured.</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : activeTab === 'recipe' ? (
+                                    <div className="flex-1 flex flex-col p-6 space-y-4 overflow-y-auto">
+                                        <h4 className="text-sm font-bold text-gray-900 dark:text-white">GraphQL Recipes</h4>
+                                        <div className="flex-1 bg-gray-50 dark:bg-gray-900 rounded-xl p-4 font-mono text-xs relative">
+                                            <div className="absolute top-4 right-4 text-[10px] font-bold text-primary-600 bg-primary-50 px-2 py-1 rounded">COMING SOON</div>
+                                            <p className="text-gray-400 italic mb-4"># WordPress GraphQL targets only</p>
+                                            <textarea
+                                                readOnly
+                                                className="w-full h-full bg-transparent border-none focus:ring-0 text-gray-300 resize-none opacity-50"
+                                                value={`query {
+  posts {
+    title
+    content
+    author {
+      name
+    }
+  }
+}`}
+                                            />
+                                        </div>
+                                    </div>
                                 ) : (
-                                    <div className="flex-1 flex flex-col bg-gray-50 dark:bg-gray-900 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 animate-in fade-in duration-300">
+                                    <div className="flex-1 flex flex-col overflow-hidden">
                                         <div className="bg-white dark:bg-gray-800 p-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
                                             <span className="text-xs font-semibold text-gray-500 uppercase tracking-tight">Interactive Swagger UI</span>
                                             <div className="flex items-center gap-2">
@@ -485,6 +620,21 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                             </>
                         )}
                     </div>
+
+                    {/* Record Editor Overlay Sidebar */}
+                    {editingRecord && (
+                        <div className="w-[450px] border-l border-gray-100 dark:border-gray-700 shadow-2xl z-30 bg-white dark:bg-gray-800 animate-in slide-in-from-right-8 duration-300 overflow-hidden flex flex-col">
+                            <RecordEditor
+                                record={editingRecord}
+                                schema={schemaData}
+                                onSave={handleSaveMappings}
+                                onCancel={() => setEditingRecord(null)}
+                                currentMappings={fieldMappings}
+                                datasourceName={datasourceName}
+                                tableName={selectedTable}
+                            />
+                        </div>
+                    )}
                 </div>
 
                 {/* Footer */}

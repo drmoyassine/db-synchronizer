@@ -37,6 +37,14 @@ class DatasourceView(Base):
     # Format: [{"field": "post_type", "operator": "==", "value": "institution"}]
     filters: Mapped[Dict[str, Any]] = mapped_column(JSON, default=list)
     
+    # Field mappings / transformations
+    # Format: {"target_field": "{{ source_field }} or @jinja"}
+    field_mappings: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    
+    # Linked views for cross-source data
+    # Format: {"meta": {"view_id": "uuid", "join_on": "id"}}
+    linked_views: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
+    
     # Metadata
     created_at: Mapped[datetime] = mapped_column(
         DateTime, 

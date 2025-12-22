@@ -107,6 +107,8 @@ class DatasourceViewBase(BaseModel):
     description: Optional[str] = None
     target_table: str
     filters: list[Dict[str, Any]] = Field(default_factory=list)
+    field_mappings: Dict[str, Any] = Field(default_factory=dict)
+    linked_views: Dict[str, Any] = Field(default_factory=dict)
 
 class DatasourceViewCreate(DatasourceViewBase):
     """Schema for creating a datasource view."""
@@ -118,6 +120,8 @@ class DatasourceViewUpdate(BaseModel):
     description: Optional[str] = None
     target_table: Optional[str] = None
     filters: Optional[list[Dict[str, Any]]] = None
+    field_mappings: Optional[Dict[str, Any]] = None
+    linked_views: Optional[Dict[str, Any]] = None
 
 class DatasourceViewResponse(DatasourceViewBase):
     """Schema for datasource view response."""

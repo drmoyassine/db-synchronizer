@@ -17,11 +17,20 @@ class Base(DeclarativeBase):
 # Ensure data directory exists
 os.makedirs("data", exist_ok=True)
 
+from sqlalchemy import event
+
 # Create async engine
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
 )
+
+@event.listens_for(engine.sync_engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
 
 # Session factory
 async_session = async_sessionmaker(

@@ -2,14 +2,17 @@ import axios from 'axios'
 
 const getBaseUrl = () => {
     const envUrl = import.meta.env.VITE_API_URL;
-    // If we're in a browser and the current host is not localhost,
-    // but the API_URL points to localhost, force relative paths.
-    if (typeof window !== 'undefined' &&
-        window.location.hostname !== 'localhost' &&
-        (envUrl?.includes('localhost') || !envUrl)) {
-        return '';
+    if (envUrl) return envUrl;
+
+    // In local development, default to localhost:8000 if not specified.
+    // This allows both direct hits and (optionally) proxying.
+    if (import.meta.env.DEV) {
+        return 'http://localhost:8000';
     }
-    return envUrl || '';
+
+    // In production/docker, use relative paths so Nginx can proxy correctly 
+    // based on the host header.
+    return '';
 };
 
 const API_URL = getBaseUrl();

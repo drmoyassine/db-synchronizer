@@ -88,6 +88,8 @@ export interface DatasourceView {
     datasource_id: string
     target_table: string
     filters: any[]
+    field_mappings?: Record<string, string>
+    linked_views?: Record<string, any>
     created_at: string
     updated_at: string
 }

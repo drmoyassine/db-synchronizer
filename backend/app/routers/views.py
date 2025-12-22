@@ -2,6 +2,7 @@
 Router for Datasource Views.
 """
 
+import logging
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -13,6 +14,10 @@ from app.models.view import DatasourceView
 from app.models.datasource import Datasource
 from app.schemas.datasource import DatasourceViewCreate, DatasourceViewUpdate, DatasourceViewResponse
 from app.adapters import get_adapter
+from app.services.expression_engine import ExpressionEngine
+
+engine = ExpressionEngine()
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -44,7 +49,9 @@ async def create_datasource_view(
         description=view.description,
         datasource_id=datasource_id,
         target_table=view.target_table,
-        filters=view.filters
+        filters=view.filters,
+        field_mappings=view.field_mappings,
+        linked_views=view.linked_views
     )
     db.add(db_view)
     await db.commit()
@@ -144,13 +151,55 @@ async def get_view_records(
         # Ensure total is never less than actual records returned
         total = max(total, len(records) + offset)
     
+    # 4. Apply transformations & handle Linked Views (Backend Join)
+    enriched_records = []
+    for record in records:
+        enriched_record = dict(record)
+        
+        # Apply Field Mappings / Transformations using ExpressionEngine
+        if db_view.field_mappings:
+            for target_col, expression in db_view.field_mappings.items():
+                value = engine.evaluate(expression, enriched_record)
+                if value is not None:
+                    enriched_record[target_col] = value
+        
+        # Handle Linked Views
+        if db_view.linked_views:
+            for key, link_config in db_view.linked_views.items():
+                linked_view_id = link_config.get("view_id")
+                join_on = enriched_record.get(link_config.get("join_on", "id"))
+                
+                if linked_view_id and join_on:
+                    try:
+                        # Recursive call (or fetch directly) to get linked data
+                        # For now, we'll do a simple fetch to avoid deep nesting complexity
+                        linked_result = await db.execute(select(DatasourceView).where(DatasourceView.id == linked_view_id))
+                        l_view = linked_result.scalar_one_or_none()
+                        if l_view:
+                            l_ds_result = await db.execute(select(Datasource).where(Datasource.id == l_view.datasource_id))
+                            l_ds = l_ds_result.scalar_one_or_none()
+                            if l_ds:
+                                l_adapter = get_adapter(l_ds)
+                                async with l_adapter:
+                                    linked_data = await l_adapter.read_records(
+                                        table=l_view.target_table,
+                                        limit=1,
+                                        where=[{"field": link_config.get("target_key", "id"), "operator": "==", "value": str(join_on)}]
+                                    )
+                                    if linked_data:
+                                        enriched_record[key] = linked_data[0]
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch linked record for {key}: {e}")
+        
+        enriched_records.append(enriched_record)
+    
     # Calculate pagination info
     import math
     from datetime import datetime, timezone
     total_pages = math.ceil(total / limit) if limit > 0 else 1
         
     return {
-        "records": records,
+        "records": enriched_records,
         "total_records": total,
         "current_page": page,
         "total_pages": total_pages,

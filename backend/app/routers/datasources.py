@@ -79,72 +79,22 @@ async def list_datasources(
     db: AsyncSession = Depends(get_db)
 ):
     """List all registered datasources."""
-    from app.models.view import DatasourceView
+    import time
+    start_time = time.time()
     
-    # Fetch datasources
+    # Fetch datasources with views using selectinload for efficiency
+    # This avoids the N+1 problem and handles lazy loading correctly in async
     result = await db.execute(
         select(Datasource)
+        .options(selectinload(Datasource.views))
         .order_by(Datasource.created_at.desc())
     )
     datasources = result.scalars().all()
     
-    # Manually fetch views for all datasources
-    ds_ids = [ds.id for ds in datasources]
-    views_by_ds = {}
-    if ds_ids:
-        views_result = await db.execute(
-            select(DatasourceView).where(DatasourceView.datasource_id.in_(ds_ids))
-        )
-        all_views = views_result.scalars().all()
-        
-        # Group views by datasource_id
-        for v in all_views:
-            if v.datasource_id not in views_by_ds:
-                views_by_ds[v.datasource_id] = []
-            views_by_ds[v.datasource_id].append(v)
+    duration = time.time() - start_time
+    logger.info(f"list_datasources took {duration:.4f}s for {len(datasources)} records")
     
-    logger.info(f"DEBUG: Found {len(views_by_ds)} datasources with views. Keys: {list(views_by_ds.keys())}")
-    for ds_id, views in views_by_ds.items():
-        logger.info(f"DEBUG: DS {ds_id} has {len(views)} views")
-    
-    # Build response manually to avoid lazy loading issues
-    response = []
-    for ds in datasources:
-        # Convert views to dict format
-        ds_views = []
-        for v in views_by_ds.get(ds.id, []):
-            ds_views.append({
-                "id": v.id,
-                "name": v.name,
-                "description": v.description,
-                "target_table": v.target_table,
-                "filters": v.filters,
-                "datasource_id": v.datasource_id,
-                "created_at": v.created_at,
-                "updated_at": v.updated_at
-            })
-        
-        ds_dict = {
-            "id": ds.id,
-            "name": ds.name,
-            "type": ds.type,
-            "host": ds.host,
-            "port": ds.port,
-            "database": ds.database,
-            "username": ds.username,
-            "api_url": ds.api_url,
-            "table_prefix": ds.table_prefix,
-            "is_active": ds.is_active,
-            "last_tested_at": ds.last_tested_at,
-            "last_test_success": ds.last_test_success,
-            "created_at": ds.created_at,
-            "updated_at": ds.updated_at,
-            "extra_config": ds.extra_config,
-            "views": ds_views
-        }
-        response.append(ds_dict)
-    
-    return response
+    return datasources
 
 
 @router.get("/{datasource_id}", response_model=DatasourceResponse)
