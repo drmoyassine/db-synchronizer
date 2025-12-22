@@ -33,7 +33,7 @@ class Datasource(Base):
         primary_key=True, 
         default=lambda: str(uuid.uuid4())
     )
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     type: Mapped[DatasourceType] = mapped_column(
         SQLEnum(DatasourceType), 
         nullable=False

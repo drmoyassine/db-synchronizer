@@ -599,6 +599,20 @@ function DatasourceModal({
                             </div>
                         </div>
                     )}
+
+                    {mutation.isError && (
+                        <div className="p-4 rounded-2xl bg-red-50 text-red-800 border border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800/50 text-sm flex items-start gap-3 animate-in slide-in-from-top-2 duration-300">
+                            <div className="mt-0.5 p-1 rounded-full bg-red-100 dark:bg-red-800/50">
+                                <XCircle className="w-4 h-4" />
+                            </div>
+                            <div>
+                                <p className="font-bold">Failed to save datasource</p>
+                                <p className="opacity-90 mt-1">
+                                    {(mutation.error as any)?.response?.data?.detail || mutation.error.message}
+                                </p>
+                            </div>
+                        </div>
+                    )}
                 </form>
 
                 <div className="p-6 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50 flex flex-col sm:flex-row gap-3">

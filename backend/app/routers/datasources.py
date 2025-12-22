@@ -35,6 +35,16 @@ async def create_datasource(
     db: AsyncSession = Depends(get_db)
 ):
     """Register a new datasource."""
+    # Check for duplicate name
+    existing_result = await db.execute(
+        select(Datasource).where(Datasource.name == data.name)
+    )
+    if existing_result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Datasource with name '{data.name}' already exists"
+        )
+
     # TODO: Encrypt password and api_key before storing
     datasource = Datasource(
         name=data.name,
@@ -52,7 +62,14 @@ async def create_datasource(
     
     db.add(datasource)
     await db.commit()
-    await db.refresh(datasource)
+    
+    # Re-fetch with relationships to avoid 500 in serialization
+    result = await db.execute(
+        select(Datasource)
+        .options(selectinload(Datasource.views))
+        .where(Datasource.id == datasource.id)
+    )
+    datasource = result.scalar_one()
     
     return datasource
 
