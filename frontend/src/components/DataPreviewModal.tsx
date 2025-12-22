@@ -261,13 +261,13 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                 </div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {tables?.filter((t: any) => t.name.toLowerCase().includes(tableSearch.toLowerCase())).map((t: any) => (
+                                {tables?.filter((t: string) => t.toLowerCase().includes(tableSearch.toLowerCase())).map((t: string) => (
                                     <button
-                                        key={t.name}
+                                        key={t}
                                         onClick={() => {
-                                            setSelectedTable(t.name);
-                                            setFilters([]);
+                                            setSelectedTable(t);
                                             setCurrentStep('records');
+                                            setFilters([]);
                                         }}
                                         className="group flex items-center justify-between p-4 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl hover:border-primary-500 hover:shadow-lg transition-all text-left"
                                     >
@@ -276,8 +276,8 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                 <Table size={20} />
                                             </div>
                                             <div>
-                                                <div className="text-xs font-bold text-gray-900 dark:text-white">{t.name}</div>
-                                                <div className="text-[10px] text-gray-500">{t.count} records</div>
+                                                <div className="text-xs font-bold text-gray-900 dark:text-white">{t}</div>
+                                                <div className="text-[10px] text-gray-500">Table / Collection</div>
                                             </div>
                                         </div>
                                         <RefreshCw className="w-4 h-4 text-gray-300 group-hover:text-primary-500 group-hover:rotate-180 transition-all duration-500" />
@@ -325,19 +325,19 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                     </div>
                                 </div>
                                 <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                                    {tables?.filter((t: any) => t.name.toLowerCase().includes(tableSearch.toLowerCase())).map((t: any) => (
+                                    {tables?.filter((t: string) => t.toLowerCase().includes(tableSearch.toLowerCase())).map((t: string) => (
                                         <button
-                                            key={t.name}
+                                            key={t}
                                             onClick={() => {
-                                                setSelectedTable(t.name);
+                                                setSelectedTable(t);
                                                 setFilters([]);
                                             }}
-                                            className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-all truncate hover:bg-gray-100 dark:hover:bg-gray-800 ${selectedTable === t.name
+                                            className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-all truncate hover:bg-gray-100 dark:hover:bg-gray-800 ${selectedTable === t
                                                 ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400'
                                                 : 'text-gray-500 dark:text-gray-400'
                                                 }`}
                                         >
-                                            {t.name}
+                                            {t}
                                         </button>
                                     ))}
                                 </div>

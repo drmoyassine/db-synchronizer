@@ -84,6 +84,8 @@ async def list_datasources(
     
     # Fetch datasources with views using selectinload for efficiency
     # This avoids the N+1 problem and handles lazy loading correctly in async
+    # Fetch datasources with views using selectinload for efficiency
+    # This avoids the N+1 problem and handles lazy loading correctly in async
     result = await db.execute(
         select(Datasource)
         .options(selectinload(Datasource.views))

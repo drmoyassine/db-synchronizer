@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
     # Database
-    database_url: str = "sqlite+aiosqlite:///./data/config.db"
+    database_url: str = "sqlite+aiosqlite:///./data/config_v2.db"
     
     # Security
     secret_key: str = "dev-secret-key-change-in-production"
