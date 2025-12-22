@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-key-change-in-production"
     
     # CORS
-    cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+    # Accept str or List[str] to prevent initial validation error before validator runs
+    cors_origins: Union[str, List[str]] = ["http://localhost:5173", "http://localhost:3000"]
 
     @field_validator("cors_origins", mode="before")
     @classmethod
