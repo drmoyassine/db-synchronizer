@@ -112,6 +112,15 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 
 # Frontend
 VITE_API_URL=http://localhost:8001
+
+## Architecture & Design Notes
+
+### Redis-Powered Sync Workflow
+To maintain high performance and avoid database bloat during complex operations, the system follows a "Redis-first" sync strategy:
+- **User-Provided Redis**: Users connect their own Redis instance via the Admin UI.
+- **In-Memory Caching**: Active sync operations are handled entirely within Redis memory.
+- **Resolution Cycle**: Data remains in the Redis cache during conflict resolution and is only committed to the target database once all conflicts are resolved or skipped.
+- **Persistence**: Final sync results and audit logs are moved to the primary configuration database after the job completes.
 ```
 
 ## Usage Flow
