@@ -617,9 +617,19 @@ function AddSyncConfigModal({
                     initialVisibleColumns={inspectorData.visibleColumns}
                     initialPinnedColumns={inspectorData.pinnedColumns}
                     initialColumnOrder={inspectorData.columnOrder}
-                    onViewSaved={() => {
+                    onViewSaved={(view) => {
                         queryClient.invalidateQueries({ queryKey: ['views'] });
                         queryClient.invalidateQueries({ queryKey: ['datasources'] });
+                        // Update inspector state to persist the saved name/ID
+                        setInspectorData(curr => ({
+                            ...curr,
+                            viewId: view.id,
+                            viewName: view.name,
+                            filters: view.filters,
+                            visibleColumns: view.visible_columns,
+                            pinnedColumns: view.pinned_columns,
+                            columnOrder: view.column_order
+                        }));
                     }}
                 />
             </div>

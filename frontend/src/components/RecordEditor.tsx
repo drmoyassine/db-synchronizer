@@ -116,7 +116,7 @@ const SortableField: React.FC<SortableFieldProps> = ({
                             <span>{fieldName}</span>
                             <span className="text-gray-400 dark:text-gray-500 font-medium normal-case flex items-center gap-1">
                                 <span className="opacity-50">:</span>
-                                <HighlightValue text={String(record[fieldName] ?? 'null')} />
+                                <HighlightValue text={typeof record[fieldName] === 'object' && record[fieldName] !== null ? JSON.stringify(record[fieldName]) : String(record[fieldName] ?? 'null')} />
                             </span>
                         </div>
                         {hasValueMatch && (
@@ -207,11 +207,17 @@ export const RecordEditor: React.FC<RecordEditorProps> = ({
             fields = fields.filter(f => f.toLowerCase().includes(columnSearch.toLowerCase()));
         }
 
-        if (filterByMatch && globalSearch.trim()) {
+        // Automatic narrowing when global search is active
+        if (globalSearch.trim()) {
+            // Show fields that match the search (even if hidden)
             fields = fields.filter(f => fieldMatchesGlobalSearch(f));
+        } else {
+            // Regular view: respect visibility and toggle
+            if (filterByMatch) {
+                fields = fields.filter(f => fieldMatchesGlobalSearch(f));
+            }
+            fields = fields.filter(f => isFieldVisible(f));
         }
-
-        fields = fields.filter(f => isFieldVisible(f));
 
         return fields.sort((a, b) => {
             const aPinned = pinnedColumns.includes(a);

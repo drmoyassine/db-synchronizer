@@ -13,7 +13,7 @@ export const datasourcesApi = {
     getTables: (id: string | number) => api.get<string[]>(`/api/datasources/${id}/tables`),
     getTableSchema: (id: string | number, table: string) => api.get<TableSchema>(`/api/datasources/${id}/tables/${table}/schema`),
     getTablesData: (id: string | number, table: string, limit: number = 10, filters?: any[]) =>
-        api.get<{ records: any[]; total: number }>(`/api/datasources/${id}/tables/${table}/data`, {
+        api.get<{ records: any[]; total: number; timestamp_utc?: string }>(`/api/datasources/${id}/tables/${table}/data`, {
             params: { limit, filters: filters ? JSON.stringify(filters) : undefined }
         }),
     refreshTableSchema: (id: string | number, table: string) =>
@@ -33,7 +33,7 @@ export const datasourcesApi = {
 export const viewsApi = {
     list: (datasourceId: string | number) => api.get<DatasourceView[]>(`/api/datasources/${datasourceId}/views`),
     create: (datasourceId: string | number, data: Partial<DatasourceView>) => api.post<DatasourceView>(`/api/datasources/${datasourceId}/views`, data),
-    update: (id: string, data: Partial<DatasourceView>) => api.put<DatasourceView>(`/api/views/${id}`, data),
+    update: (id: string, data: Partial<DatasourceView>) => api.patch<DatasourceView>(`/api/views/${id}`, data),
     delete: (id: string) => api.delete(`/api/views/${id}`),
     patchRecord: (viewId: string, record: any, keyColumn: string = 'id') =>
         api.patch(`/api/views/${viewId}/records`, record, { params: { key_column: keyColumn } }),

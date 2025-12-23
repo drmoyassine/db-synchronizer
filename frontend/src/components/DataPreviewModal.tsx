@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { formatDistanceToNow } from 'date-fns';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { datasourcesApi, viewsApi } from '../api';
-import { X, Loader2, AlertCircle, Filter, Plus, Trash2, CheckCircle, Table, Copy, RefreshCw, Database, Edit2, Link as LinkIcon, Save, EyeOff, ChevronDown, Columns, Search, Activity, Zap, Settings, ChevronRight, Globe, Info, Pin, GripHorizontal, RotateCcw } from 'lucide-react';
+import { X, Loader2, AlertCircle, Filter, Plus, Trash2, CheckCircle, Table, Copy, RefreshCw, Database, Link as LinkIcon, Save, EyeOff, ChevronDown, Columns, Search, Activity, Zap, Settings, ChevronRight, Globe, Info, Pin, GripHorizontal, RotateCcw, Pencil } from 'lucide-react';
 import { RecordEditor } from './RecordEditor';
 import { useLayoutStore } from '../store/useLayoutStore';
 import {
@@ -28,7 +29,7 @@ interface DataPreviewModalProps {
     datasourceId: string | number;
     table: string;
     datasourceName: string;
-    onViewSaved?: () => void;
+    onViewSaved?: (view: any) => void;
     initialFilters?: { field: string; operator: string; value: string }[];
     viewId?: string;
     initialViewName?: string;
@@ -160,9 +161,11 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
     const [isColumnsDropdownOpen, setIsColumnsDropdownOpen] = React.useState(false);
     const [columnSearch, setColumnSearch] = React.useState('');
     const [showSaveForm, setShowSaveForm] = React.useState(false);
+    const [showSyncConfirm, setShowSyncConfirm] = React.useState(false);
     const [saveSuccess, setSaveSuccess] = React.useState(false);
     const [activeTab, setActiveTab] = React.useState<'table' | 'record' | 'linked' | 'api' | 'webhooks'>('table');
     const [globalSearch, setGlobalSearch] = React.useState('');
+    const [isRenamingView, setIsRenamingView] = React.useState(false);
     const [globalSearchStatus, setGlobalSearchStatus] = React.useState<'idle' | 'searching_datasource' | 'searching_all'>('idle');
     const [globalResults, setGlobalResults] = React.useState<{ datasource_name: string; table: string; count: number }[]>([]);
     const [isSessionLoading, setIsSessionLoading] = React.useState(false);
@@ -188,7 +191,6 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
     const [currentMatchIndex, setCurrentMatchIndex] = React.useState(0);
     const [allMatches, setAllMatches] = React.useState<{ colKey: string; rowIndex: number }[]>([]);
 
-    // Layout Store
     const {
         pinnedColumns,
         columnOrder,
@@ -197,26 +199,38 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
         setVisibleColumns,
         togglePin,
         toggleVisibility,
-        initialize: initializeLayout
+        initialize: initializeLayout,
+        setActiveContext,
+        clearTableCache
     } = useLayoutStore();
+
+    // Force re-render periodically to update relative timestamps
+    const [, setTick] = useState(0);
+    useEffect(() => {
+        const interval = setInterval(() => setTick(t => t + 1), 30000); // 30s
+        return () => clearInterval(interval);
+    }, []);
 
     // Queries
     const { data: tables } = useQuery({
         queryKey: ['datasourceTables', datasourceId],
         queryFn: () => datasourcesApi.getTables(datasourceId).then(r => r.data),
         enabled: isOpen && !!datasourceId,
+        staleTime: 1000 * 60 * 5, // 5 minutes
     });
 
     const { data: schemaData } = useQuery({
         queryKey: ['tableSchema', datasourceId, selectedTable],
         queryFn: () => datasourcesApi.getTableSchema(datasourceId, selectedTable).then(r => r.data),
         enabled: isOpen && !!datasourceId && !!selectedTable,
+        staleTime: 1000 * 60 * 60, // 1 hour for schema
     });
 
-    const { data, isLoading, error } = useQuery({
+    const { data, isLoading, error, refetch: refetchData, isFetching: isFetchingData } = useQuery({
         queryKey: ['tableData', datasourceId, selectedTable, appliedFilters],
         queryFn: () => datasourcesApi.getTablesData(datasourceId, selectedTable, 100, appliedFilters).then(r => r.data),
         enabled: isOpen && !!datasourceId && !!selectedTable,
+        staleTime: 1000 * 60 * 10, // 10 minutes cache for data by default
     });
 
     // Memos
@@ -238,20 +252,34 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
             fields = [...ordered, ...remaining];
         }
 
-        // 2. Move pinnedColumns to front
+        // 2. Move pinnedColumns to front (Stack at the left/top)
         if (pinnedColumns && pinnedColumns.length > 0) {
-            const pinned = pinnedColumns.filter(f => fields.includes(f));
-            const unpinned = fields.filter(f => !pinned.includes(f));
+            const pinned = fields.filter(f => pinnedColumns.includes(f));
+            const unpinned = fields.filter(f => !pinnedColumns.includes(f));
             fields = [...pinned, ...unpinned];
         }
 
-        // 3. Filter by visibility
+        // 3. Filter by visibility (BUT reveal hidden matches if searching)
         if (visibleColumns.length > 0) {
-            fields = fields.filter(f => visibleColumns.includes(f));
+            fields = fields.filter(f => {
+                const isVisible = visibleColumns.includes(f);
+                if (isVisible) return true;
+
+                // If hidden, only reveal if it contains a search match
+                if (globalSearch.trim() && data?.records) {
+                    const searchLower = globalSearch.toLowerCase();
+                    return data.records.some(record => {
+                        const val = record[f];
+                        const strVal = typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val ?? '');
+                        return strVal.toLowerCase().includes(searchLower);
+                    });
+                }
+                return false;
+            });
         }
 
         return fields;
-    }, [availableFields, columnOrder, pinnedColumns, visibleColumns]);
+    }, [availableFields, columnOrder, pinnedColumns, visibleColumns, globalSearch, data]);
 
 
 
@@ -308,9 +336,8 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
         const searchLower = globalSearch.toLowerCase();
 
         filteredRecords.forEach((record, rowIndex) => {
-            // Check only visible columns or check all? Probably all available to jump to them?
-            // Let's check tableColumns which are the visible/sorted ones.
-            tableColumns.forEach(colKey => {
+            // Check all available fields to ensure we don't miss anything that was hidden but matches
+            availableFields.forEach(colKey => {
                 const val = record[colKey];
                 const strVal = typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val ?? '');
                 if (strVal.toLowerCase().includes(searchLower)) {
@@ -320,50 +347,43 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
         });
         setAllMatches(matches);
         setCurrentMatchIndex(0); // Reset index on new search
-    }, [globalSearch, filteredRecords, tableColumns]);
+    }, [globalSearch, filteredRecords, availableFields]);
 
 
-    // Calculate all matches for navigation
+    // Set Active Context for Layout Store
     React.useEffect(() => {
-        if (!globalSearch || !data?.records) {
-            setAllMatches([]);
-            setCurrentMatchIndex(0);
-            return;
+        if (isOpen && datasourceId && selectedTable) {
+            setActiveContext(datasourceId, selectedTable);
         }
-
-        const matches: { colKey: string; rowIndex: number }[] = [];
-        const searchLower = globalSearch.toLowerCase();
-
-        filteredRecords.forEach((record, rowIndex) => {
-            // Check only visible columns or check all? Probably all available to jump to them?
-            // Let's check tableColumns which are the visible/sorted ones.
-            tableColumns.forEach(colKey => {
-                const val = record[colKey];
-                const strVal = typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val ?? '');
-                if (strVal.toLowerCase().includes(searchLower)) {
-                    matches.push({ colKey, rowIndex });
-                }
-            });
-        });
-        setAllMatches(matches);
-        setCurrentMatchIndex(0); // Reset index on new search
-    }, [globalSearch, filteredRecords, tableColumns]);
+    }, [isOpen, datasourceId, selectedTable, setActiveContext]);
 
     const handleNextMatch = () => {
         if (allMatches.length === 0) return;
         const nextIndex = (currentMatchIndex + 1) % allMatches.length;
         setCurrentMatchIndex(nextIndex);
         const match = allMatches[nextIndex];
+
+        // Synchronize Record View if active
+        if (activeTab === 'record') {
+            const recordAtMatch = filteredRecords[match.rowIndex];
+            if (recordAtMatch) setEditingRecord(recordAtMatch);
+        }
+
         scrollToColumn(match.colKey);
-        // Also scroll to row?
-        // document.querySelector(`tr[data-row-index="${match.rowIndex}"]`)?.scrollIntoView({ block: 'center' });
     };
 
     const handlePrevMatch = () => {
         if (allMatches.length === 0) return;
-        const prevIndex = (currentMatchIndex - 1 + allMatches.length) % allMatches.length;
+        const prevIndex = (currentMatchIndex-1 + allMatches.length) % allMatches.length;
         setCurrentMatchIndex(prevIndex);
         const match = allMatches[prevIndex];
+
+        // Synchronize Record View if active
+        if (activeTab === 'record') {
+            const recordAtMatch = filteredRecords[match.rowIndex];
+            if (recordAtMatch) setEditingRecord(recordAtMatch);
+        }
+
         scrollToColumn(match.colKey);
     };
 
@@ -392,7 +412,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
 
     const scrollToColumn = (columnKey: string) => {
         const tableContainer = document.querySelector('.table-container');
-        const th = document.querySelector(`th[data-column-key="${columnKey}"]`);
+        const th = document.querySelector(`th[data-column-key= "${columnKey}"]`);
         if (tableContainer && th) {
             const thRect = th.getBoundingClientRect();
             const containerRect = tableContainer.getBoundingClientRect();
@@ -401,7 +421,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
             // and any pinned columns.
             const isPinned = pinnedColumns.includes(columnKey);
             if (!isPinned) {
-                const scrollLeft = tableContainer.scrollLeft + (thRect.left - containerRect.left) - 64 - (pinnedColumns.length * 150);
+                const scrollLeft = tableContainer.scrollLeft + (thRect.left-containerRect.left)-64-(pinnedColumns.length * 150);
                 tableContainer.scrollTo({ left: scrollLeft, behavior: 'smooth' });
             }
         }
@@ -475,6 +495,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
             }
 
             setShowSaveForm(false);
+            setIsRenamingView(false);
             setCurrentStep('records');
             setAppliedFilters([...filters]); // Sync server-side query state with saved filters
 
@@ -482,7 +503,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                 setCurrentViewId(response.data.id);
             }
             setSaveSuccess(true);
-            onViewSaved?.();
+            onViewSaved?.(response.data);
             setTimeout(() => setSaveSuccess(false), 5000);
 
             // Clear session after saving
@@ -496,22 +517,24 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
 
     const handleManualUpdate = async () => {
         if (!datasourceId || !selectedTable) return;
-        if (!window.confirm("This will clear your temporary session and reload from saved config. Continue?")) return;
 
         try {
             setIsSessionLoading(true); // Indicate loading while resetting
+
+            // 1. Clear Server Session & Cache
             await datasourcesApi.clearSession(datasourceId, selectedTable);
+            clearTableCache(datasourceId, selectedTable);
 
-            // Invalidate queries to force refetch with fresh state
-            await queryClient.invalidateQueries({ queryKey: ['tableData', datasourceId, selectedTable] });
-            await queryClient.invalidateQueries({ queryKey: ['tableSchema', datasourceId, selectedTable] });
+            // 2. Clear current query data to force absolute fresh state
+            queryClient.removeQueries({ queryKey: ['tableData', datasourceId, selectedTable] });
+            queryClient.removeQueries({ queryKey: ['tableSchema', datasourceId, selectedTable] });
 
-            // Re-run initialization logic manually to load initial props
+            // 3. Re-run initialization logic manually to load initial props
             setFilters(initialFilters || []);
             setAppliedFilters(initialFilters || []);
             setFieldMappings(initialFieldMappings || {});
-            setLinkedViews(initialLinkedViews || {}); // Also reset linked views
-            setWebhooks(initialWebhooks || []); // Also reset webhooks
+            setLinkedViews(initialLinkedViews || {});
+            setWebhooks(initialWebhooks || []);
 
             initializeLayout({
                 pinnedColumns: (initialPinnedColumns as string[]) || [],
@@ -519,7 +542,13 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                 visibleColumns: initialVisibleColumns || [],
             });
 
-            if (initialViewName) setViewName(initialViewName);
+            // 4. Perform refetch immediately
+            await Promise.all([
+                refetchData(),
+                queryClient.invalidateQueries({ queryKey: ['tableSchema', datasourceId, selectedTable] })
+            ]);
+
+            setViewName(initialViewName || '');
             if (viewId) {
                 setCurrentViewId(viewId);
                 setCurrentStep('records');
@@ -550,10 +579,19 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
     });
 
     // Effects
-    React.useEffect(() => {
-        const loadInitialData = async () => {
-            if (!isOpen) return;
+    const lastProcessedConfig = React.useRef<string>("");
 
+    React.useEffect(() => {
+        if (!isOpen) {
+            lastProcessedConfig.current = "";
+            return;
+        }
+
+        // Deep equality check for core configuration to prevent redundant state resets & query invalidations
+        const currentPropsKey = JSON.stringify({ datasourceId, table, viewId, initialFilters });
+        if (currentPropsKey === lastProcessedConfig.current) return;
+
+        const loadInitialData = async () => {
             // 1. Set basic state
             setWebhooks(initialWebhooks || []);
             setActiveTab('table');
@@ -565,9 +603,12 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
             try {
                 const { data: sessionData } = await datasourcesApi.getSession(datasourceId, table);
                 if (sessionData && Object.keys(sessionData).length > 0) {
-                    console.log("Loading layout from Redis session:", sessionData);
-                    setFilters(sessionData.filters || []);
-                    setAppliedFilters(sessionData.filters || []);
+                    const nextFilters = sessionData.filters || [];
+                    if (JSON.stringify(appliedFilters) !== JSON.stringify(nextFilters)) {
+                        setFilters(nextFilters);
+                        setAppliedFilters(nextFilters);
+                    }
+
                     setFieldMappings(sessionData.fieldMappings || {});
 
                     initializeLayout({
@@ -592,6 +633,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                     }
 
                     setIsSessionLoading(false);
+                    lastProcessedConfig.current = currentPropsKey;
                     return; // Done
                 }
             } catch (err) {
@@ -599,8 +641,12 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
             }
 
             // 3. Fallback to initial props (the "saved" state)
-            setFilters(initialFilters || []);
-            setAppliedFilters(initialFilters || []);
+            const nextFilters = initialFilters || [];
+            if (JSON.stringify(appliedFilters) !== JSON.stringify(nextFilters)) {
+                setFilters(nextFilters);
+                setAppliedFilters(nextFilters);
+            }
+
             setFieldMappings(initialFieldMappings || {});
             setLinkedViews(initialLinkedViews || {});
 
@@ -626,12 +672,13 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                 setIsSidebarCollapsed(false);
             }
             setIsSessionLoading(false);
+            lastProcessedConfig.current = currentPropsKey;
         };
 
         loadInitialData();
-    }, [isOpen, table, datasourceId, viewId, initialFilters, initialFieldMappings, initialLinkedViews, initialPinnedColumns, initialColumnOrder, initialVisibleColumns, initialViewName, initialWebhooks, initializeLayout]);
+    }, [isOpen, table, datasourceId, viewId, initialFilters, initialFieldMappings, initialLinkedViews, initialPinnedColumns, initialColumnOrder, initialVisibleColumns, initialViewName, initialWebhooks]);
 
-    // Session Sync Effect - Debounced save to Redis
+    // Session Sync Effect-Debounced save to Redis
     React.useEffect(() => {
         if (!isOpen || !datasourceId || !selectedTable || isSessionLoading) return;
 
@@ -666,8 +713,8 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
     // @ts-ignore
     const API_DOCS_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace('/api', '') + '/docs/views';
     const SWAGGER_ANCHOR = currentViewId
-        ? `# / Views / create_view_record_api_views__view_id__records_post`
-        : `# / Views`;
+        ? `#/Views/create_view_record_api_views__view_id__records_post`
+        : `#/Views`;
 
     if (!isOpen) return null;
 
@@ -697,6 +744,17 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                         >
                                             {viewName || initialViewName || 'Untitled View'}
                                         </span>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setIsRenamingView(true);
+                                                setShowSaveForm(true);
+                                            }}
+                                            className="p-1 hover:bg-white/20 rounded transition-colors text-white/50 hover:text-white"
+                                            title="Rename View"
+                                        >
+                                            <Pencil size={10} />
+                                        </button>
                                         <div className="w-px h-3 bg-white/20 mx-1" />
                                         <button
                                             onClick={() => copyToClipboard(currentViewId)}
@@ -722,7 +780,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                             <>
                                                 <span className="mx-2 opacity-30">/</span>
                                                 <span
-                                                    className={`transition-colors cursor-pointer ${currentStep === 'records' ? 'text-gray-900 dark:text-white' : 'hover:text-primary-600'}`}
+                                                    className={`transition-colors cursor-pointer ${currentStep === 'records' ? 'text-gray-900 dark:text-white' : 'hover:text-primary-600'} `}
                                                     onClick={() => {
                                                         setCurrentStep('records');
                                                         setActiveTab('table');
@@ -750,37 +808,39 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                             <div className="flex flex-col items-end">
                                                 <span className="text-[8px] font-bold text-gray-400 uppercase leading-none">Last Updated</span>
                                                 <span className="text-[9px] font-medium text-gray-500 dark:text-gray-400 leading-tight">
-                                                    {(data as any)?.timestamp_utc ? new Date((data as any).timestamp_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Never'}
+                                                    {(data as any)?.timestamp_utc ? formatDistanceToNow(new Date((data as any).timestamp_utc), { addSuffix: true }) : 'Never'}
                                                 </span>
                                             </div>
                                             <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-1" />
                                             <button
-                                                onClick={runRemoteSearch}
+                                                onClick={() => setShowSyncConfirm(true)}
                                                 className="p-1.5 text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-white dark:hover:bg-gray-800 rounded-lg transition-all"
-                                                title="Run Datasource Search (Remote)"
+                                                title="Full Refresh: Clear session, cache and reload from datasource"
                                             >
-                                                <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+                                                <RefreshCw size={16} className={(isLoading || isFetchingData || isSessionLoading) ? 'animate-spin' : ''} />
                                             </button>
                                         </div>
                                     )}
                                     <button
-                                        onClick={handleManualUpdate}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg text-xs font-semibold transition-all h-9"
-                                        title="Clear temporary session and reload from saved configuration"
-                                    >
-                                        <RotateCcw className="w-3.5 h-3.5" />
-                                        Manual Update
-                                    </button>
-                                    <button
-                                        onClick={() => setShowSaveForm(!showSaveForm)}
+                                        onClick={() => {
+                                            if (currentViewId) {
+                                                handleSaveView();
+                                            } else {
+                                                setShowSaveForm(!showSaveForm);
+                                            }
+                                        }}
                                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all h-9 ${selectedTable
                                             ? 'bg-primary-50 border-primary-200 text-primary-600 hover:bg-primary-100 shadow-sm'
                                             : 'bg-gray-50 border-gray-200 text-gray-500 opacity-50 cursor-not-allowed'
-                                            }`}
-                                        disabled={!selectedTable}
+                                            } `}
+                                        disabled={!selectedTable || (!!currentViewId && isSaving)}
                                     >
-                                        <Save className="w-3.5 h-3.5" />
-                                        Save View
+                                        {isSaving && currentViewId ? (
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                        ) : (
+                                            <Save className="w-3.5 h-3.5" />
+                                        )}
+                                        {currentViewId ? 'Save View' : 'Save as View'}
                                     </button>
                                 </div>
                             )}
@@ -799,7 +859,9 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                     <div className="bg-primary-600 p-4 animate-in slide-in-from-top duration-300">
                         <div className="max-w-4xl mx-auto flex items-center gap-4">
                             <div className="flex-1">
-                                <label className="block text-[10px] font-bold text-primary-100 uppercase tracking-wider mb-1">New View Name</label>
+                                <label className="block text-[10px] font-bold text-primary-100 uppercase tracking-wider mb-1">
+                                    {isRenamingView ? 'Rename View' : 'New View Name'}
+                                </label>
                                 <input
                                     type="text"
                                     value={viewName}
@@ -833,7 +895,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                     {currentStep === 'tables' ? (
                         <div className="flex-1 p-6 space-y-4 overflow-y-auto font-sans">
                             <div className="flex items-center justify-between mb-4">
-                                <h4 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-tight">Select Table / Collection</h4>
+                                <h4 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-tight">Select Table/Collection</h4>
                                 <div className="relative">
                                     <Database className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
                                     <input
@@ -862,7 +924,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                             </div>
                                             <div>
                                                 <div className="text-xs font-bold text-gray-900 dark:text-white">{t}</div>
-                                                <div className="text-[10px] text-gray-500">Table / Collection</div>
+                                                <div className="text-[10px] text-gray-500">Table/Collection</div>
                                             </div>
                                         </div>
                                         <RefreshCw className="w-4 h-4 text-gray-300 group-hover:text-primary-500 group-hover:rotate-180 transition-all duration-500" />
@@ -876,9 +938,9 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                             <div className={`${isSidebarCollapsed ? 'w-10' : 'w-64'} transition-all duration-300 border-r border-gray-100 dark:border-gray-700 bg-gray-50/30 dark:bg-gray-900/10 flex flex-col overflow-hidden relative group/sidebar`}>
                                 <button
                                     onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-                                    className="absolute right-2 top-2 z-10 p-1 bg-white dark:bg-gray-800 rounded-md shadow-sm border border-gray-100 dark:border-gray-700 text-gray-400 hover:text-primary-600 transition-colors opacity-0 group-hover/sidebar:opacity-100"
+                                    className="absolute right-2 top-2 z-10 p-1 bg-white dark:bg-gray-800 rounded-md shadow-sm border border-gray-100 dark:border-gray-700 text-gray-400 hover:text-primary-600 transition-all opacity-50 hover:opacity-100"
                                 >
-                                    <ChevronDown className={`w-3 h-3 transition-transform ${isSidebarCollapsed ? '-rotate-90' : 'rotate-90'}`} />
+                                    <ChevronDown className={`w-3 h-3 transition-transform ${isSidebarCollapsed ? '-rotate-90' : 'rotate-90'} `} />
                                 </button>
 
                                 {!isSidebarCollapsed && (
@@ -898,7 +960,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                 className="absolute right-2 top-2.5 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-400 hover:text-primary-500 transition-colors disabled:opacity-50"
                                                 title="Refresh current table schema"
                                             >
-                                                <RefreshCw className={`w-3 h-3 ${refreshSchemaMutation.isPending ? 'animate-spin' : ''}`} />
+                                                <RefreshCw className={`w-3 h-3 ${refreshSchemaMutation.isPending ? 'animate-spin' : ''} `} />
                                             </button>
                                         </div>
                                     </div>
@@ -915,7 +977,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                             className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-all truncate hover:bg-gray-100 dark:hover:bg-gray-800 ${selectedTable === t
                                                 ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-400'
                                                 : 'text-gray-500 dark:text-gray-400'
-                                                } ${isSidebarCollapsed ? 'justify-center px-2' : ''}`}
+                                                } ${isSidebarCollapsed ? 'justify-center px-2' : ''} `}
                                             title={isSidebarCollapsed ? t : undefined}
                                         >
                                             {isSidebarCollapsed ? t.slice(0, 2).toUpperCase() : t}
@@ -927,11 +989,11 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                             {/* Main Records Panel */}
                             <div className="flex-1 flex flex-col min-w-0 overflow-hidden font-sans">
                                 <div className="flex items-center px-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/10 dark:bg-gray-900/10">
-                                    <button onClick={() => setActiveTab('table')} className={`px-4 py-2 text-xs font-bold border-b-2 ${activeTab === 'table' ? 'text-primary-600 border-primary-600' : 'text-gray-400 border-transparent hover:text-gray-600'}`}>Table View</button>
-                                    <button onClick={() => setActiveTab('record')} className={`px-4 py-2 text-xs font-bold border-b-2 ${activeTab === 'record' ? 'text-primary-600 border-primary-600' : 'text-gray-400 border-transparent hover:text-gray-600'}`}>Record View</button>
-                                    <button onClick={() => setActiveTab('linked')} className={`px-4 py-2 text-xs font-bold border-b-2 ${activeTab === 'linked' ? 'text-primary-600 border-primary-600' : 'text-gray-400 border-transparent hover:text-gray-600'}`}>Linked Views</button>
-                                    <button onClick={() => setActiveTab('api')} className={`px-4 py-2 text-xs font-bold border-b-2 ${activeTab === 'api' ? 'text-primary-600 border-primary-600' : 'text-gray-400 border-transparent hover:text-gray-600'}`}>API</button>
-                                    <button onClick={() => setActiveTab('webhooks')} className={`px-4 py-2 text-xs font-bold border-b-2 ${activeTab === 'webhooks' ? 'text-primary-600 border-primary-600' : 'text-gray-400 border-transparent hover:text-gray-600'}`}>Webhooks</button>
+                                    <button onClick={() => setActiveTab('table')} className={`px-4 py-2 text-xs font-bold border-b-2 ${activeTab === 'table' ? 'text-primary-600 border-primary-600' : 'text-gray-400 border-transparent hover:text-gray-600'} `}>Table View</button>
+                                    <button onClick={() => setActiveTab('record')} className={`px-4 py-2 text-xs font-bold border-b-2 ${activeTab === 'record' ? 'text-primary-600 border-primary-600' : 'text-gray-400 border-transparent hover:text-gray-600'} `}>Record View</button>
+                                    <button onClick={() => setActiveTab('linked')} className={`px-4 py-2 text-xs font-bold border-b-2 ${activeTab === 'linked' ? 'text-primary-600 border-primary-600' : 'text-gray-400 border-transparent hover:text-gray-600'} `}>Linked Views</button>
+                                    <button onClick={() => setActiveTab('api')} className={`px-4 py-2 text-xs font-bold border-b-2 ${activeTab === 'api' ? 'text-primary-600 border-primary-600' : 'text-gray-400 border-transparent hover:text-gray-600'} `}>API</button>
+                                    <button onClick={() => setActiveTab('webhooks')} className={`px-4 py-2 text-xs font-bold border-b-2 ${activeTab === 'webhooks' ? 'text-primary-600 border-primary-600' : 'text-gray-400 border-transparent hover:text-gray-600'} `}>Webhooks</button>
                                 </div>
 
                                 <div className="flex-1 overflow-auto">
@@ -1046,14 +1108,14 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                                 e.stopPropagation();
                                                                 setIsColumnsDropdownOpen(!isColumnsDropdownOpen);
                                                             }}
-                                                            className={`flex items-center gap-2 px-3 py-1.5 text-xs font-bold rounded-lg transition-all border ${isColumnsDropdownOpen ? 'bg-primary-600 border-primary-600 text-white shadow-md' : 'bg-white border-gray-200 text-gray-600 hover:border-primary-400'}`}
+                                                            className={`flex items-center gap-2 px-3 py-1.5 text-xs font-bold rounded-lg transition-all border ${isColumnsDropdownOpen ? 'bg-primary-600 border-primary-600 text-white shadow-md' : 'bg-white border-gray-200 text-gray-600 hover:border-primary-400'} `}
                                                         >
                                                             <Columns size={14} />
                                                             <span>Columns</span>
                                                             <span className="flex items-center justify-center min-w-[20px] h-5 px-1 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded text-[10px] ml-1">
-                                                                {visibleColumns.length === 0 ? (availableFields.length || Object.keys(data?.records?.[0] || {}).length) : visibleColumns.length}
+                                                                {visibleColumns.length === 0 ? availableFields.length : visibleColumns.length}/{availableFields.length}
                                                             </span>
-                                                            <ChevronDown size={14} className={`transition-transform ${isColumnsDropdownOpen ? 'rotate-180' : ''}`} />
+                                                            <ChevronDown size={14} className={`transition-transform ${isColumnsDropdownOpen ? 'rotate-180' : ''} `} />
                                                         </button>
 
                                                         {isColumnsDropdownOpen && (
@@ -1102,10 +1164,10 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                                                 }}
                                                                                 className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-900/50 rounded-lg cursor-pointer transition-colors"
                                                                             >
-                                                                                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${(visibleColumns.length === 0 || visibleColumns.includes(col)) ? 'bg-primary-600 border-primary-600' : 'bg-white border-gray-300'}`}>
+                                                                                <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${(visibleColumns.length === 0 || visibleColumns.includes(col)) ? 'bg-primary-600 border-primary-600' : 'bg-white border-gray-300'} `}>
                                                                                     {(visibleColumns.length === 0 || visibleColumns.includes(col)) && <CheckCircle size={10} className="text-white" />}
                                                                                 </div>
-                                                                                <span className={`text-[11px] font-semibold ${(visibleColumns.length === 0 || visibleColumns.includes(col)) ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400'}`}>{col}</span>
+                                                                                <span className={`text-[11px] font-semibold ${(visibleColumns.length === 0 || visibleColumns.includes(col)) ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400'} `}>{col}</span>
                                                                             </div>
                                                                         ))}
                                                                 </div>
@@ -1219,8 +1281,11 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                         </div>
                                                     )}
 
-                                                    {isLoading ? (
-                                                        <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2"><Loader2 className="animate-spin" /><p className="text-xs">Loading...</p></div>
+                                                    {(!data && (isLoading || isSessionLoading)) ? (
+                                                        <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
+                                                            <Loader2 className="animate-spin" />
+                                                            <p className="text-xs font-bold uppercase tracking-wider opacity-50">{isSessionLoading ? 'Restoring Session...' : 'Refetching Data...'}</p>
+                                                        </div>
                                                     ) : error ? (
                                                         <div className="h-full flex flex-col items-center justify-center text-red-500 gap-2"><AlertCircle /><p className="text-xs">Error loading data.</p></div>
                                                     ) : (
@@ -1228,7 +1293,6 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                             <table className="w-full text-left border-collapse min-w-max">
                                                                 <thead className="bg-gray-50/50 dark:bg-gray-900/50 sticky top-0 z-30">
                                                                     <tr>
-                                                                        <th className="w-16 px-4 py-3 bg-gray-50 dark:bg-gray-900 border-b border-gray-100 sticky left-0 z-40 text-[10px] font-bold text-gray-400 uppercase">Action</th>
                                                                         <DndContext
                                                                             sensors={headerSensors}
                                                                             collisionDetection={closestCenter}
@@ -1238,7 +1302,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                                                 items={tableColumns}
                                                                                 strategy={horizontalListSortingStrategy}
                                                                             >
-                                                                                {tableColumns.map((key) => {
+                                                                                {tableColumns.map((key, j) => {
                                                                                     // Check if any record's value for this key matches search (handle nested objects)
                                                                                     const columnMatches = globalSearch && data?.records?.some(r => {
                                                                                         const val = r[key];
@@ -1246,8 +1310,8 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                                                         return strVal.toLowerCase().includes(globalSearch.toLowerCase());
                                                                                     });
                                                                                     const isPinned = pinnedColumns.includes(key);
-                                                                                    const pinnedIndex = pinnedColumns.filter(p => tableColumns.includes(p)).indexOf(key);
-                                                                                    const leftOffset = isPinned ? 64 + (pinnedIndex * 150) : undefined;
+                                                                                    // Since pinned columns are now moved to the front, we calculate offset by its index
+                                                                                    const leftOffset = isPinned ? (j * 150) : undefined;
 
                                                                                     return (
                                                                                         <SortableTableHeader
@@ -1275,19 +1339,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                                 </thead>
                                                                 <tbody>
                                                                     {filteredRecords.map((record, i) => (
-                                                                        <tr key={i} className="group hover:bg-primary-50/30 dark:hover:bg-primary-900/10 transition-colors">
-                                                                            <td className="px-4 py-3 border-b border-gray-50 dark:border-gray-700 text-center sticky left-0 bg-white dark:bg-gray-800 z-20 group-hover:bg-primary-50 dark:group-hover:bg-primary-900/20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
-                                                                                <button
-                                                                                    onClick={() => {
-                                                                                        setEditingRecord(record);
-                                                                                        setActiveTab('record');
-                                                                                    }}
-                                                                                    className="p-1.5 bg-white dark:bg-gray-700 border border-primary-200 dark:border-primary-800 shadow-sm rounded-lg text-primary-600 dark:text-primary-400 hover:scale-110 hover:bg-primary-600 hover:text-white transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center mx-auto"
-                                                                                    title="Edit Record"
-                                                                                >
-                                                                                    <Edit2 size={14} />
-                                                                                </button>
-                                                                            </td>
+                                                                        <tr key={i} className="group hover:bg-primary-50/30 dark:hover:bg-primary-900/10 transition-colors relative">
                                                                             {tableColumns.map((key, j) => {
                                                                                 const value = record[key];
                                                                                 // Handle nested objects for search matching
@@ -1295,13 +1347,13 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                                                 const cellMatches = globalSearch && strVal.toLowerCase().includes(globalSearch.toLowerCase());
 
                                                                                 const isPinned = pinnedColumns.includes(key);
-                                                                                const pinnedIndex = pinnedColumns.filter(p => tableColumns.includes(p)).indexOf(key);
-                                                                                const leftOffset = isPinned ? 64 + (pinnedIndex * 150) : undefined;
+                                                                                // Since pinned columns are now moved to the front, we calculate offset by its index
+                                                                                const leftOffset = isPinned ? (j * 150) : undefined;
 
                                                                                 return (
                                                                                     <td
                                                                                         key={j}
-                                                                                        className={`px-4 py-3 text-xs border-b border-gray-50 truncate transition-all ${cellMatches ? 'bg-yellow-50/50 dark:bg-yellow-900/10 text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300'} ${isPinned ? 'sticky z-10 bg-white dark:bg-gray-800 border-r border-gray-100/50 group-hover:bg-primary-50/50 dark:group-hover:bg-primary-900/10' : 'max-w-xs'}`}
+                                                                                        className={`px-4 py-3 text-xs border-b border-gray-50 truncate transition-all ${cellMatches ? 'bg-yellow-50/50 dark:bg-yellow-900/10 text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300'} ${isPinned ? 'sticky z-10 bg-white dark:bg-gray-800 border-r border-gray-100/50 group-hover:bg-primary-50/50 dark:group-hover:bg-primary-900/10' : 'max-w-xs'} `}
                                                                                         style={isPinned ? { left: leftOffset, minWidth: '150px', maxWidth: '150px' } : {}}
                                                                                     >
                                                                                         {typeof value === 'object' ? (
@@ -1312,6 +1364,21 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                                                     </td>
                                                                                 );
                                                                             })}
+                                                                            {/* Floating Action Button at the end of the row */}
+                                                                            <td className="sticky right-0 w-0 p-0 border-none overflow-visible z-20">
+                                                                                <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center">
+                                                                                    <button
+                                                                                        onClick={() => {
+                                                                                            setEditingRecord(record);
+                                                                                            setActiveTab('record');
+                                                                                        }}
+                                                                                        className="p-2 bg-white dark:bg-gray-700 border border-primary-200 dark:border-primary-800 shadow-lg rounded-full text-primary-600 dark:text-primary-400 hover:scale-110 hover:bg-primary-600 hover:text-white transition-all opacity-0 group-hover:opacity-100 flex items-center justify-center"
+                                                                                        title="Edit Record"
+                                                                                    >
+                                                                                        <Pencil size={14} />
+                                                                                    </button>
+                                                                                </div>
+                                                                            </td>
                                                                         </tr>
                                                                     ))}
                                                                 </tbody>
@@ -1321,10 +1388,10 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                 </div>
                                             ) : activeTab === 'record' && (
                                                 <div className="flex-1 overflow-hidden">
-                                                    {isSessionLoading ? (
+                                                    {(!data?.records?.[0] && (isLoading || isSessionLoading)) ? (
                                                         <div className="h-full flex flex-col items-center justify-center text-gray-400 gap-2">
                                                             <Loader2 className="animate-spin" />
-                                                            <p className="text-xs">Loading session...</p>
+                                                            <p className="text-xs">Loading records...</p>
                                                         </div>
                                                     ) : (
                                                         <RecordEditor
@@ -1406,7 +1473,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                         <div key={idx} className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700/60 rounded-2xl flex flex-col shadow-sm group hover:border-primary-500/30 transition-all overflow-hidden">
                                                             <div className="p-4 flex items-start justify-between">
                                                                 <div className="flex items-center gap-3">
-                                                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${webhook.enabled ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30' : 'bg-gray-100 text-gray-400 dark:bg-gray-700/50'}`}>
+                                                                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${webhook.enabled ? 'bg-primary-50 text-primary-600 dark:bg-primary-900/30' : 'bg-gray-100 text-gray-400 dark:bg-gray-700/50'} `}>
                                                                         <Zap size={20} className={webhook.enabled ? 'animate-pulse' : ''} />
                                                                     </div>
                                                                     <div>
@@ -1436,7 +1503,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                                             newWebhooks[idx].enabled = !newWebhooks[idx].enabled;
                                                                             setWebhooks(newWebhooks);
                                                                         }}
-                                                                        className={`p-2 rounded-lg transition-colors ${webhook.enabled ? 'text-primary-600 hover:bg-primary-50' : 'text-gray-300 hover:bg-gray-50'}`}
+                                                                        className={`p-2 rounded-lg transition-colors ${webhook.enabled ? 'text-primary-600 hover:bg-primary-50' : 'text-gray-300 hover:bg-gray-50'} `}
                                                                     >
                                                                         <Activity size={14} />
                                                                     </button>
@@ -1528,7 +1595,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                 <code className="text-[10px] text-primary-600 font-mono italic">endpoint: /api/views/{currentViewId || '{id}'}/records</code>
                                             </div>
                                             <iframe
-                                                src={`${API_DOCS_URL}${currentViewId ? `?id=${currentViewId}` : ''}${SWAGGER_ANCHOR}`}
+                                                src={`${API_DOCS_URL}${currentViewId ? `?id=${currentViewId}` : ''}${SWAGGER_ANCHOR} `}
                                                 className="flex-1 w-full border-none"
                                             />
                                         </div>
@@ -1609,9 +1676,9 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                     className={`py-3 px-2 rounded-2xl text-[10px] font-bold uppercase transition-all flex flex-col items-center gap-1.5 ring-1 ring-inset ${isActive
                                                         ? 'bg-primary-600 text-white ring-primary-600 shadow-lg shadow-primary-500/20'
                                                         : 'bg-white text-gray-400 ring-gray-100 dark:bg-gray-800 dark:ring-gray-700 hover:ring-gray-200'
-                                                        }`}
+                                                        } `}
                                                 >
-                                                    <div className={`p-1 rounded-md ${isActive ? 'bg-white/20' : 'bg-gray-50 dark:bg-gray-700'}`}>
+                                                    <div className={`p-1 rounded-md ${isActive ? 'bg-white/20' : 'bg-gray-50 dark:bg-gray-700'} `}>
                                                         {event === 'insert' ? <Plus size={12} /> : event === 'update' ? <RefreshCw size={12} /> : <Trash2 size={12} />}
                                                     </div>
                                                     {event}
@@ -1644,6 +1711,42 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                     className="flex-1 py-4 bg-primary-600 text-white rounded-2xl text-xs font-bold hover:bg-primary-700 transition-all shadow-lg shadow-primary-500/20 disabled:opacity-50 disabled:shadow-none active:scale-95"
                                 >
                                     {editingWebhookIndex !== null ? 'Update Settings' : 'Create Webhook'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Custom Confirmation Modal */}
+                {showSyncConfirm && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 max-w-sm w-full animate-in zoom-in duration-200 border border-gray-100 dark:border-gray-700">
+                            <div className="flex items-center gap-4 mb-4">
+                                <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-xl text-red-600">
+                                    <RotateCcw size={24} />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-tight">Confirm Hard Refresh</h3>
+                                    <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
+                                        This will wipe your current session, local layout cache, and reload all data fresh from the source. Any unsaved changes will be lost.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setShowSyncConfirm(false)}
+                                    className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-xl text-[10px] font-bold transition-all"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowSyncConfirm(false);
+                                        handleManualUpdate();
+                                    }}
+                                    className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-bold shadow-lg shadow-red-500/20 transition-all active:scale-95"
+                                >
+                                    Confirm Reset
                                 </button>
                             </div>
                         </div>

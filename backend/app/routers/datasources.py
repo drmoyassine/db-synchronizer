@@ -450,7 +450,8 @@ async def get_datasource_table_data(
             total = max(total, len(records))
             return {
                 "records": records,
-                "total": total
+                "total": total,
+                "timestamp_utc": datetime.utcnow().isoformat() + "Z"
             }
     except Exception as e:
         logger.error(f"Error fetching data for {datasource_id} table {table}: {str(e)}")
