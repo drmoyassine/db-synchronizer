@@ -13,6 +13,7 @@ interface DataPreviewModalProps {
     onViewSaved?: () => void;
     initialFilters?: { field: string; operator: string; value: string }[];
     viewId?: string;
+    initialViewName?: string;
     initialFieldMappings?: Record<string, string>;
     initialLinkedViews?: Record<string, any>;
 }
@@ -27,11 +28,12 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
     initialFilters,
     viewId,
     initialFieldMappings,
-    initialLinkedViews
+    initialLinkedViews,
+    initialViewName
 }) => {
     const queryClient = useQueryClient();
     const [filters, setFilters] = React.useState<{ field: string; operator: string; value: string }[]>([]);
-    const [viewName, setViewName] = React.useState('');
+    const [viewName, setViewName] = React.useState(initialViewName || '');
     const [isSaving, setIsSaving] = React.useState(false);
     const [showSaveForm, setShowSaveForm] = React.useState(false);
     const [saveSuccess, setSaveSuccess] = React.useState(false);
@@ -73,6 +75,8 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
             setLinkedViews(initialLinkedViews || {});
             setActiveTab('data');
             setSelectedTable(table);
+
+            if (initialViewName) setViewName(initialViewName);
 
             if (viewId) {
                 setCurrentStep('editor');
@@ -198,19 +202,21 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                 )}
                             </div>
                             {viewId && (
-                                <button
-                                    onClick={() => copyToClipboard(viewId)}
-                                    className="group relative flex items-center gap-1.5 px-2 py-0.5 bg-primary-50 dark:bg-primary-900/40 border border-primary-100 dark:border-primary-800 rounded text-[10px] font-bold text-primary-600 hover:bg-primary-100 transition-all active:scale-95"
-                                    title="Click to copy View ID"
-                                >
-                                    <Copy size={12} className="group-hover:text-primary-700" />
-                                    <span>{viewId}</span>
-                                    {copySuccess && (
-                                        <span className="absolute -right-6 text-green-500 animate-in fade-in slide-in-from-left-2">
-                                            <CheckCircle size={12} />
-                                        </span>
-                                    )}
-                                </button>
+                                <div className="flex items-center gap-2 px-3 py-1 bg-primary-600 rounded-lg shadow-sm">
+                                    <span className="text-xs font-bold text-white uppercase tracking-wider">{viewName || initialViewName || 'Untitled View'}</span>
+                                    <div className="w-px h-3 bg-white/20 mx-1" />
+                                    <button
+                                        onClick={() => copyToClipboard(viewId)}
+                                        className="group relative flex items-center gap-1.5 text-[10px] font-bold text-primary-100 hover:text-white transition-all active:scale-95"
+                                        title="Click to copy View ID"
+                                    >
+                                        <Copy size={10} />
+                                        <span>{viewId.split('-')[0]}...</span>
+                                        {copySuccess && (
+                                            <CheckCircle size={10} className="text-green-300 animate-in fade-in" />
+                                        )}
+                                    </button>
+                                </div>
                             )}
                         </div>
                         {saveSuccess && (
@@ -425,29 +431,28 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                                                                     {data?.records?.[0] && Object.keys(data.records[0]).map(key => (
                                                                         <th key={key} className="px-4 py-3 text-[10px] font-bold uppercase text-gray-400 border-b border-gray-100 whitespace-nowrap">{key}</th>
                                                                     ))}
+                                                                    <th className="w-10 px-4 py-3 bg-gray-50/50 dark:bg-gray-900/50 border-b border-gray-100"></th>
                                                                 </tr>
                                                             </thead>
                                                             <tbody>
                                                                 {filteredRecords.map((record, i) => (
-                                                                    <tr key={i} onMouseEnter={() => setHoveredRow(i)} onMouseLeave={() => setHoveredRow(null)} className="hover:bg-gray-50/50 dark:hover:bg-gray-900/20 transition-colors relative">
+                                                                    <tr key={i} onMouseEnter={() => setHoveredRow(i)} onMouseLeave={() => setHoveredRow(null)} className="group hover:bg-gray-50/50 dark:hover:bg-gray-900/20 transition-colors">
                                                                         {Object.values(record).map((value: any, j) => (
                                                                             <td key={j} className="px-4 py-3 text-xs text-gray-600 dark:text-gray-300 border-b border-gray-50 max-w-xs truncate">
                                                                                 {typeof value === 'object' ? JSON.stringify(value) : String(value ?? '')}
                                                                             </td>
                                                                         ))}
-                                                                        {hoveredRow === i && (
-                                                                            <td className="absolute right-0 top-0 h-full flex items-center pr-4 z-20">
-                                                                                <button
-                                                                                    onClick={() => {
-                                                                                        setEditingRecord(record);
-                                                                                        setCurrentStep('editor');
-                                                                                    }}
-                                                                                    className="p-1.5 bg-white border border-gray-200 shadow-lg rounded-lg text-primary-600 hover:scale-110 transition-all"
-                                                                                >
-                                                                                    <Edit2 size={14} />
-                                                                                </button>
-                                                                            </td>
-                                                                        )}
+                                                                        <td className="px-4 py-3 border-b border-gray-50 text-right">
+                                                                            <button
+                                                                                onClick={() => {
+                                                                                    setEditingRecord(record);
+                                                                                    setCurrentStep('editor');
+                                                                                }}
+                                                                                className={`p-1.5 bg-white border border-gray-200 shadow-sm rounded-lg text-primary-600 hover:scale-110 transition-all ${hoveredRow === i ? 'opacity-100' : 'opacity-0'}`}
+                                                                            >
+                                                                                <Edit2 size={14} />
+                                                                            </button>
+                                                                        </td>
                                                                     </tr>
                                                                 ))}
                                                             </tbody>

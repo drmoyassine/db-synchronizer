@@ -180,14 +180,16 @@ function AddSyncConfigModal({
         name: string;
         filters?: any[];
         viewId?: string;
+        viewName?: string;
     }>({
         isOpen: false,
         datasourceId: '',
         table: '',
-        name: ''
+        name: '',
+        viewName: ''
     });
 
-    const openInspector = (datasourceId: string | number, table: string, filters?: any[], viewId?: string) => {
+    const openInspector = (datasourceId: string | number, table: string, filters?: any[], viewId?: string, viewName?: string) => {
         const ds = datasources.find(d => String(d.id) === String(datasourceId));
         setInspectorData({
             isOpen: true,
@@ -195,7 +197,8 @@ function AddSyncConfigModal({
             table,
             name: ds?.name || 'Datasource',
             filters,
-            viewId
+            viewId,
+            viewName
         });
     }
 
@@ -345,7 +348,7 @@ function AddSyncConfigModal({
                                         type="button"
                                         onClick={() => {
                                             const view = masterViews?.find(v => v.id === formData.master_view_id);
-                                            openInspector(formData.master_datasource_id, formData.master_table, view?.filters, view?.id);
+                                            openInspector(formData.master_datasource_id, formData.master_table, view?.filters, view?.id, view?.name);
                                         }}
                                         className="text-[10px] flex items-center gap-1 text-primary-600 hover:underline"
                                     >
@@ -399,7 +402,7 @@ function AddSyncConfigModal({
                                         type="button"
                                         onClick={() => {
                                             const view = slaveViews?.find(v => v.id === formData.slave_view_id);
-                                            openInspector(formData.slave_datasource_id, formData.slave_table, view?.filters, view?.id);
+                                            openInspector(formData.slave_datasource_id, formData.slave_table, view?.filters, view?.id, view?.name);
                                         }}
                                         className="text-[10px] flex items-center gap-1 text-primary-600 hover:underline"
                                     >
@@ -601,6 +604,7 @@ function AddSyncConfigModal({
                     datasourceName={inspectorData.name}
                     initialFilters={inspectorData.filters}
                     viewId={inspectorData.viewId}
+                    initialViewName={inspectorData.viewName}
                     onViewSaved={() => {
                         queryClient.invalidateQueries({ queryKey: ['views'] });
                         queryClient.invalidateQueries({ queryKey: ['datasources'] });
