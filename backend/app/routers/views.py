@@ -4,10 +4,11 @@ Router for Datasource Views.
 
 import logging
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import httpx
 
 from app.database import get_db
 from app.models.view import DatasourceView
@@ -59,7 +60,11 @@ async def create_datasource_view(
         target_table=view.target_table,
         filters=view.filters,
         field_mappings=view.field_mappings,
-        linked_views=view.linked_views
+        linked_views=view.linked_views,
+        visible_columns=view.visible_columns,
+        pinned_columns=view.pinned_columns,
+        column_order=view.column_order,
+        webhooks=view.webhooks
     )
     db.add(db_view)
     await db.commit()
@@ -211,6 +216,14 @@ async def get_view_records(
         
         enriched_records.append(enriched_record)
     
+    # 5. Filter to visible columns only (if configured)
+    if db_view.visible_columns and len(db_view.visible_columns) > 0:
+        filtered_records = []
+        for rec in enriched_records:
+            filtered_rec = {k: v for k, v in rec.items() if k in db_view.visible_columns}
+            filtered_records.append(filtered_rec)
+        enriched_records = filtered_records
+    
     # Calculate pagination info
     import math
     from datetime import datetime, timezone
@@ -225,6 +238,7 @@ async def get_view_records(
         "view_name": db_view.name,
         "datasource_name": ds.name,
         "target_table": db_view.target_table,
+        "visible_columns": db_view.visible_columns or [],
         "timestamp_utc": datetime.now(timezone.utc).isoformat()
     }
 
@@ -305,15 +319,15 @@ async def create_view_record(
     return {"success": True, "message": "Record created successfully"}
 
 
-@router.put("/views/{view_id}/records")
-async def update_view_record(
+@router.patch("/views/{view_id}/records")
+async def patch_view_record(
     view_id: str,
     record: Dict[str, Any],
     key_column: str = "id",
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Update an existing record in the table associated with this view.
+    Partially update an existing record in the table associated with this view.
     """
     result = await db.execute(select(DatasourceView).where(DatasourceView.id == view_id))
     db_view = result.scalar_one_or_none()
@@ -326,6 +340,8 @@ async def update_view_record(
     
     adapter = get_adapter(ds)
     async with adapter:
+        # For patch, we might want to fetch existing record first or rely on adapter's upsert
+        # Most our current adapters (SQL) handle upsert as 'merge'
         success = await adapter.upsert_record(
             table=db_view.target_table,
             record=record,
@@ -333,9 +349,68 @@ async def update_view_record(
         )
         
     if not success:
-        raise HTTPException(status_code=500, detail="Failed to update record")
+        raise HTTPException(status_code=500, detail="Failed to patch record")
         
-    return {"success": True, "message": "Record updated successfully"}
+    return {"success": True, "message": "Record patched successfully"}
+
+
+async def forward_webhook(url: str, payload: Dict[str, Any]):
+    """Helper to forward payload to an external URL."""
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(url, json=payload, timeout=10.0)
+    except Exception as e:
+        logger.error(f"Failed to forward webhook to {url}: {e}")
+
+
+@router.post("/views/{view_id}/trigger")
+async def trigger_view_webhook(
+    view_id: str,
+    payload: Dict[str, Any],
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Manually trigger the view logic and forward to registered webhooks.
+    Can be used by external sources to route data through db-synchronizer.
+    """
+    result = await db.execute(select(DatasourceView).where(DatasourceView.id == view_id))
+    db_view = result.scalar_one_or_none()
+    
+    if not db_view:
+        raise HTTPException(status_code=404, detail="View not found")
+    
+    # Logic: If payload contains data, we transform it.
+    # In a real scenario, we might want to check if the payload matches view filters.
+    # For now, we apply mappings to the payload and forward to all registered webhooks.
+    
+    transformed_data = {}
+    if db_view.field_mappings:
+        # Simple mapping logic
+        for target, source_template in db_view.field_mappings.items():
+            # If source_template is a field name in payload
+            if source_template in payload:
+                transformed_data[target] = payload[source_template]
+            else:
+                # Handle templates or jinja if engine is available
+                try:
+                    transformed_data[target] = engine.render(source_template, payload)
+                except:
+                    transformed_data[target] = source_template
+    else:
+        transformed_data = payload
+
+    # Forward to all registered webhooks for this view
+    if db_view.webhooks:
+        for webhook in db_view.webhooks:
+            if webhook.get("url"):
+                background_tasks.add_task(forward_webhook, webhook["url"], transformed_data)
+                
+    return {
+        "success": True, 
+        "message": f"Processed and routed to {len(db_view.webhooks)} webhooks",
+        "data": transformed_data
+    }
 
 
 @router.delete("/views/{view_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -45,6 +45,20 @@ class DatasourceView(Base):
     # Format: {"meta": {"view_id": "uuid", "join_on": "id"}}
     linked_views: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
     
+    # Visible columns configuration
+    # Format: ["id", "name", "date"]
+    visible_columns: Mapped[list[str]] = mapped_column(JSON, default=list)
+    
+    # Pinned columns / fields (frozen at the start/top)
+    pinned_columns: Mapped[list[str]] = mapped_column(JSON, default=list)
+    
+    # Custom column / field order
+    column_order: Mapped[list[str]] = mapped_column(JSON, default=list)
+    
+    # Webhooks for event-driven logic
+    # Format: [{"url": "...", "event": "...", "method": "..."}]
+    webhooks: Mapped[list[Dict[str, Any]]] = mapped_column(JSON, default=list)
+    
     # Metadata
     created_at: Mapped[datetime] = mapped_column(
         DateTime, 

@@ -109,6 +109,10 @@ class DatasourceViewBase(BaseModel):
     filters: list[Dict[str, Any]] = Field(default_factory=list)
     field_mappings: Dict[str, Any] = Field(default_factory=dict)
     linked_views: Dict[str, Any] = Field(default_factory=dict)
+    visible_columns: List[str] = Field(default_factory=list)
+    pinned_columns: List[str] = Field(default_factory=list)
+    column_order: List[str] = Field(default_factory=list)
+    webhooks: list[Dict[str, Any]] = Field(default_factory=list)
 
 class DatasourceViewCreate(DatasourceViewBase):
     """Schema for creating a datasource view."""
@@ -122,6 +126,10 @@ class DatasourceViewUpdate(BaseModel):
     filters: Optional[list[Dict[str, Any]]] = None
     field_mappings: Optional[Dict[str, Any]] = None
     linked_views: Optional[Dict[str, Any]] = None
+    visible_columns: Optional[List[str]] = None
+    pinned_columns: Optional[List[str]] = None
+    column_order: Optional[List[str]] = None
+    webhooks: Optional[list[Dict[str, Any]]] = None
 
 class DatasourceViewResponse(DatasourceViewBase):
     """Schema for datasource view response."""

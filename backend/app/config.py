@@ -35,8 +35,9 @@ class Settings(BaseSettings):
     port: int = 8001
     debug: bool = False
     
-    # Redis (for Celery)
+    # Redis (for Celery and Caching)
     redis_url: str = "redis://localhost:6379/0"
+    sync_state_ttl: int = 14400  # Default 4 hours
     
     class Config:
         env_file = ".env"

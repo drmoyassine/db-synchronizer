@@ -90,6 +90,10 @@ export interface DatasourceView {
     filters: any[]
     field_mappings?: Record<string, string>
     linked_views?: Record<string, any>
+    visible_columns?: string[]
+    pinned_columns?: string[]
+    column_order?: string[]
+    webhooks?: any[]
     created_at: string
     updated_at: string
 }

@@ -35,11 +35,16 @@ export function Datasources() {
         name: string;
         filters?: any[];
         viewId?: string;
+        webhooks?: any[];
+        pinnedColumns?: string[];
+        columnOrder?: string[];
     }>({
         isOpen: false,
         datasourceId: '',
         table: '',
-        name: ''
+        name: '',
+        pinnedColumns: [],
+        columnOrder: []
     });
     const queryClient = useQueryClient()
 
@@ -112,14 +117,17 @@ export function Datasources() {
                                 }
                             }}
                             isTesting={testMutation.isPending && testMutation.variables === ds.id}
-                            onInspect={(table, filters, viewId) => {
+                            onInspect={(table, filters, viewId, webhooks, pinned, order) => {
                                 setInspectorData({
                                     isOpen: true,
                                     datasourceId: ds.id,
                                     table,
                                     name: ds.name,
                                     filters,
-                                    viewId
+                                    viewId,
+                                    webhooks,
+                                    pinnedColumns: pinned,
+                                    columnOrder: order
                                 })
                             }}
                         />
@@ -135,6 +143,9 @@ export function Datasources() {
                 datasourceName={inspectorData.name}
                 initialFilters={inspectorData.filters}
                 viewId={inspectorData.viewId}
+                initialWebhooks={inspectorData.webhooks}
+                initialPinnedColumns={inspectorData.pinnedColumns}
+                initialColumnOrder={inspectorData.columnOrder}
                 onViewSaved={() => {
                     queryClient.invalidateQueries({ queryKey: ['datasources'] })
                 }}
@@ -166,7 +177,7 @@ function DatasourceCard({
     onEdit: () => void
     onDelete: () => void
     isTesting: boolean
-    onInspect: (table: string, filters?: any[], viewId?: string) => void
+    onInspect: (table: string, filters?: any[], viewId?: string, webhooks?: any[], pinned?: string[], order?: string[]) => void
 }) {
     return (
         <div className="bg-white dark:bg-gray-800 rounded-xl p-5 shadow-sm border border-gray-200 dark:border-gray-700 hover-lift">
@@ -224,7 +235,7 @@ function DatasourceCard({
                                 className="group flex items-center gap-1.5 px-2 py-1 bg-gray-50 dark:bg-gray-900/50 border border-gray-100 dark:border-gray-700 rounded-md text-[10px] font-medium text-gray-500 transition-all hover:border-primary-200 hover:bg-white dark:hover:bg-gray-800"
                             >
                                 <button
-                                    onClick={() => onInspect(view.target_table, view.filters, view.id)}
+                                    onClick={() => onInspect(view.target_table, view.filters, view.id, view.webhooks, view.pinned_columns, view.column_order)}
                                     className="truncate max-w-[100px] hover:text-primary-600 transition-colors"
                                     title={`Inspect ${view.name} (${view.target_table})`}
                                 >

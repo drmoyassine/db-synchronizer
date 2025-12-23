@@ -71,12 +71,32 @@ def invalidate_settings_cache():
 async def get_redis_client(redis_url: Optional[str] = None) -> Optional[redis.Redis]:
     """
     Get or create Redis client.
-    FORCE DISABLED FOR DEBUGGING.
     """
-    return None
-
-    # Global client instance
     global _redis_client, _current_url
+    
+    # Use provided URL or fallback to app settings
+    from app.config import settings
+    url = redis_url or settings.redis_url
+    
+    if not url:
+        return None
+        
+    if _redis_client and _current_url == url:
+        return _redis_client
+        
+    try:
+        _redis_client = await redis.from_url(
+            url, 
+            decode_responses=True,
+            socket_connect_timeout=5,
+            retry_on_timeout=True
+        )
+        _current_url = url
+        logger.info(f"Redis client initialized with URL: {url}")
+        return _redis_client
+    except Exception as e:
+        logger.error(f"Failed to initialize Redis client: {e}")
+        return None
 
 
 async def cache_get(redis_url: str, key: str) -> Optional[Any]:

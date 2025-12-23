@@ -21,6 +21,8 @@ from app.schemas.datasource import (
     TableSchema,
 )
 from app.adapters import get_adapter
+from app.config import settings
+from app.redis_client import cache_get, cache_set, cache_delete_pattern
 
 
 from sqlalchemy.orm import selectinload
@@ -455,6 +457,70 @@ async def get_datasource_table_data(
         raise HTTPException(status_code=500, detail=f"Failed to fetch sample data: {str(e)}")
 
 
+@router.get("/{datasource_id}/search")
+async def search_datasource_tables(
+    datasource_id: str,
+    q: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Search for a string across all tables in a specific datasource."""
+    result = await db.execute(select(Datasource).where(Datasource.id == datasource_id))
+    datasource = result.scalar_one_or_none()
+    
+    if not datasource:
+        raise HTTPException(status_code=404, detail="Datasource not found")
+    
+    matches = []
+    try:
+        adapter = get_adapter(datasource)
+        async with adapter:
+            tables = await adapter.get_tables()
+            for table in tables:
+                count = await adapter.count_records(table, where=[{"field": "search", "operator": "contains", "value": q}])
+                if count > 0:
+                    matches.append({
+                        "table": table,
+                        "datasource_id": datasource_id,
+                        "datasource_name": datasource.name,
+                        "count": count
+                    })
+        return matches
+    except Exception as e:
+        logger.error(f"Error searching datasource {datasource_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+
+@router.get("/search-all")
+async def search_all_datasources(
+    q: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Search for a string across all tables in ALL datasources."""
+    result = await db.execute(select(Datasource))
+    datasources = result.scalars().all()
+    
+    all_matches = []
+    for ds in datasources:
+        try:
+            adapter = get_adapter(ds)
+            async with adapter:
+                tables = await adapter.get_tables()
+                for table in tables:
+                    count = await adapter.count_records(table, where=[{"field": "search", "operator": "contains", "value": q}])
+                    if count > 0:
+                        all_matches.append({
+                            "table": table,
+                            "datasource_id": str(ds.id),
+                            "datasource_name": ds.name,
+                            "count": count
+                        })
+        except Exception as e:
+            logger.warning(f"Skipping search for datasource {ds.id}: {str(e)}")
+            continue
+            
+    return all_matches
+
+
 def _get_error_suggestion(e: Exception) -> Optional[str]:
     """Helper to provide diagnostic suggestions for common connection errors."""
     msg = str(e).lower()
@@ -467,3 +533,30 @@ def _get_error_suggestion(e: Exception) -> Optional[str]:
     if "timeout" in msg:
         return "The connection timed out. Check your firewall settings and ensure the server is listening on the correct port."
     return None
+
+
+@router.post("/{datasource_id}/tables/{table_name}/session")
+async def save_table_session(datasource_id: int, table_name: str, session_data: dict):
+    """Save draft layout/config to Redis session."""
+    key = f"session:{datasource_id}:{table_name}"
+    ttl = settings.sync_state_ttl
+    success = await cache_set(settings.redis_url, key, session_data, ttl=ttl)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to save session to Redis")
+    return {"status": "ok"}
+
+
+@router.get("/{datasource_id}/tables/{table_name}/session")
+async def get_table_session(datasource_id: int, table_name: str):
+    """Retrieve draft layout/config from Redis session."""
+    key = f"session:{datasource_id}:{table_name}"
+    data = await cache_get(settings.redis_url, key)
+    return data or {}
+
+
+@router.delete("/{datasource_id}/tables/{table_name}/session")
+async def clear_table_session(datasource_id: int, table_name: str):
+    """Clear draft layout/config from Redis session."""
+    key = f"session:{datasource_id}:{table_name}"
+    await cache_delete_pattern(settings.redis_url, key)
+    return {"status": "ok"}
