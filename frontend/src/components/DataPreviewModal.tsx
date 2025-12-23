@@ -253,35 +253,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
         return fields;
     }, [availableFields, columnOrder, pinnedColumns, visibleColumns]);
 
-    const searchMatches = React.useMemo(() => {
-        if (!globalSearch.trim() || !data?.records) return { records: 0, cells: 0, columns: [] as string[] };
 
-        const query = globalSearch.toLowerCase();
-        let recordsCount = 0;
-        let cellsCount = 0;
-        const matchingColumns = new Set<string>();
-
-        data.records.forEach(r => {
-            let recordMatched = false;
-            // Only search in currently applicable columns (pinned + visible)
-            tableColumns.forEach(key => {
-                const val = r[key];
-                const strVal = typeof val === 'object' && val !== null ? JSON.stringify(val) : String(val ?? '');
-                if (strVal.toLowerCase().includes(query)) {
-                    cellsCount++;
-                    recordMatched = true;
-                    matchingColumns.add(key);
-                }
-            });
-            if (recordMatched) recordsCount++;
-        });
-
-        return {
-            records: recordsCount,
-            cells: cellsCount,
-            columns: Array.from(matchingColumns)
-        };
-    }, [globalSearch, data?.records, tableColumns]);
 
     const filteredRecords = React.useMemo(() => {
         if (!data?.records) return [];
