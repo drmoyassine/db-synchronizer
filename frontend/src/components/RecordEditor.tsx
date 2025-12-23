@@ -1,6 +1,6 @@
 import React from 'react';
 import { ExpressionEditor } from './ExpressionEditor';
-import { X, Save, Info, Link as LinkIcon, Plus, RotateCcw, Check } from 'lucide-react';
+import { X, Info, Link as LinkIcon, Plus, RotateCcw, Check } from 'lucide-react';
 import { TableSchema } from '../types';
 
 interface RecordEditorProps {

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { datasourcesApi, viewsApi } from '../api';
-import { X, Loader2, AlertCircle, Filter, Plus, Trash2, CheckCircle, Table, Copy, RefreshCw, Database, Edit2, Link as LinkIcon, Info, RotateCcw, Check, Save } from 'lucide-react';
+import { X, Loader2, AlertCircle, Filter, Plus, Trash2, CheckCircle, Table, Copy, RefreshCw, Database, Edit2, Link as LinkIcon, Save } from 'lucide-react';
 import { RecordEditor } from './RecordEditor';
 
 interface DataPreviewModalProps {
