@@ -5,7 +5,7 @@ Datasources API router - CRUD operations for database connections.
 import logging
 import json
 from datetime import datetime, timezone
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -536,7 +536,7 @@ def _get_error_suggestion(e: Exception) -> Optional[str]:
 
 
 @router.post("/{datasource_id}/tables/{table_name}/session")
-async def save_table_session(datasource_id: int, table_name: str, session_data: dict):
+async def save_table_session(datasource_id: str, table_name: str, session_data: Dict[str, Any]):
     """Save draft layout/config to Redis session."""
     key = f"session:{datasource_id}:{table_name}"
     ttl = settings.sync_state_ttl
@@ -547,7 +547,7 @@ async def save_table_session(datasource_id: int, table_name: str, session_data: 
 
 
 @router.get("/{datasource_id}/tables/{table_name}/session")
-async def get_table_session(datasource_id: int, table_name: str):
+async def get_table_session(datasource_id: str, table_name: str):
     """Retrieve draft layout/config from Redis session."""
     key = f"session:{datasource_id}:{table_name}"
     data = await cache_get(settings.redis_url, key)
@@ -555,7 +555,7 @@ async def get_table_session(datasource_id: int, table_name: str):
 
 
 @router.delete("/{datasource_id}/tables/{table_name}/session")
-async def clear_table_session(datasource_id: int, table_name: str):
+async def clear_table_session(datasource_id: str, table_name: str):
     """Clear draft layout/config from Redis session."""
     key = f"session:{datasource_id}:{table_name}"
     await cache_delete_pattern(settings.redis_url, key)
