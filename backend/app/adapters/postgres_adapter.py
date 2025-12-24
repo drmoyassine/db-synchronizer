@@ -5,6 +5,7 @@ PostgreSQL adapter using asyncpg for direct Postgres connections.
 from typing import Any, Dict, List, Optional, Union
 import logging
 import asyncpg
+import ssl
 
 from app.adapters.base import SQLAdapter
 
@@ -30,18 +31,50 @@ class PostgresAdapter(SQLAdapter):
             raise ValueError("Database host is required")
 
         try:
+            # First attempt: standard SSL secure connection
             self._pool = await asyncpg.create_pool(
                 host=host,
                 port=port,
                 database=db_name,
                 user=user,
                 password=self.datasource.password_encrypted,  # TODO: decrypt
+                ssl=True,  # Better negotiation for Supabase/Neon
                 min_size=1,
                 max_size=10,
+                command_timeout=60,
             )
-            self.logger.info("Successfully established connection pool")
+            self.logger.info(f"Successfully established {self.datasource.type} connection pool to {host} (Secure)")
         except Exception as e:
-            self.logger.error(f"Failed to connect to Postgres: {str(e)}")
+            # Check if it's an SSL verification error
+            error_msg = str(e).lower()
+            if "certificate verify failed" in error_msg or "self signed certificate" in error_msg:
+                self.logger.warning(f"SSL Certificate verification failed for {host}. Attempting fallback with verification disabled...")
+                
+                # Fallback: SSL connection but skip certificate verification
+                # This is common for Supabase/Neon poolers with self-signed certs
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                
+                try:
+                    self._pool = await asyncpg.create_pool(
+                        host=host,
+                        port=port,
+                        database=db_name,
+                        user=user,
+                        password=self.datasource.password_encrypted,
+                        ssl=ctx,
+                        min_size=1,
+                        max_size=10,
+                        command_timeout=60,
+                    )
+                    self.logger.info(f"Successfully established {self.datasource.type} connection pool to {host} (SSL Fallback/Insecure)")
+                    return
+                except Exception as retry_e:
+                    self.logger.error(f"Fallback connection also failed: {str(retry_e)}")
+                    raise retry_e
+            
+            self.logger.error(f"Failed to connect to {self.datasource.type} ({host}:{port}): {str(e)}", exc_info=True)
             raise
     
     async def disconnect(self) -> None:
@@ -189,3 +222,31 @@ class PostgresAdapter(SQLAdapter):
         
         async with self._pool.acquire() as conn:
             return await conn.fetchval(query, *params)
+    
+    async def search_records(
+        self,
+        table: str,
+        query: str,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Search across all columns for matching records."""
+        # Get schema to know which columns to search
+        schema = await self.get_schema(table)
+        columns = [col["name"] for col in schema["columns"]]
+        
+        if not columns:
+            return []
+        
+        # Build OR conditions for each column using CAST to TEXT
+        conditions = []
+        params = []
+        for i, col in enumerate(columns, 1):
+            conditions.append(f'CAST("{col}" AS TEXT) LIKE ${i}')
+            params.append(f"%{query}%")
+        
+        where_clause = " OR ".join(conditions)
+        query_sql = f'SELECT * FROM "{table}" WHERE {where_clause} LIMIT {limit}'
+        
+        async with self._pool.acquire() as conn:
+            rows = await conn.fetch(query_sql, *params)
+            return [dict(row) for row in rows]

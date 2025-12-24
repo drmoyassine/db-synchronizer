@@ -86,6 +86,19 @@ class DatabaseAdapter(ABC):
         """Count records in a table, optionally with filter."""
         pass
     
+    @abstractmethod
+    async def search_records(
+        self,
+        table: str,
+        query: str,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        Search for query string across all text columns in a table.
+        Returns records that match the search query.
+        """
+        pass
+    
     async def __aenter__(self):
         """Async context manager entry."""
         await self.connect()
@@ -140,17 +153,26 @@ class SQLAdapter(DatabaseAdapter, ABC):
             v = f.get("value")
             op = f.get("operator", "==")
             
-            if not k or v is None:
+            # Skip if field is missing. 
+            # Skip if value is missing UNLESS it's an empty check operator (which doesn't need a value).
+            if not k or (v is None and op not in ["is_empty", "is_not_empty"]):
                 continue
             
             p_idx = len(params) + 1
             curr_placeholder = f"${p_idx}" if use_index else placeholder
             
+            # Use CAST for string-based operators if the database might have typed columns (like Postgres)
+            # This prevents 500 errors when comparing integer columns to ''
+            col_expr = f'"{k}"'
+            # Apply CAST to all operators that receive string values from the UI
+            if op in ["==", "!=", "contains", "starts_with", "ends_with", "is_empty", "is_not_empty", "in", "not_in"]:
+                col_expr = f'CAST("{k}" AS TEXT)'
+
             if op == "==":
-                conditions.append(f'"{k}" = {curr_placeholder}')
+                conditions.append(f'{col_expr} = {curr_placeholder}')
                 params.append(v)
             elif op == "!=":
-                conditions.append(f'"{k}" != {curr_placeholder}')
+                conditions.append(f'{col_expr} != {curr_placeholder}')
                 params.append(v)
             elif op == ">":
                 conditions.append(f'"{k}" > {curr_placeholder}')
@@ -159,9 +181,37 @@ class SQLAdapter(DatabaseAdapter, ABC):
                 conditions.append(f'"{k}" < {curr_placeholder}')
                 params.append(v)
             elif op == "contains":
-                # Note: this might need db-specific casting in some cases (like Postgres ::text)
-                conditions.append(f'"{k}" LIKE {curr_placeholder}')
+                conditions.append(f'{col_expr} LIKE {curr_placeholder}')
                 params.append(f"%{v}%")
+            elif op == "starts_with":
+                conditions.append(f'{col_expr} LIKE {curr_placeholder}')
+                params.append(f"{v}%")
+            elif op == "ends_with":
+                conditions.append(f'{col_expr} LIKE {curr_placeholder}')
+                params.append(f"%{v}")
+            elif op == "is_empty":
+                conditions.append(f'({col_expr} IS NULL OR {col_expr} = \'\')')
+            elif op == "is_not_empty":
+                conditions.append(f'({col_expr} IS NOT NULL AND {col_expr} != \'\')')
+            elif op == "in":
+                # Handle comma-separated list
+                vals = [x.strip() for x in str(v).split(",") if x.strip()]
+                if not vals:
+                    continue
+                placeholders = []
+                for val in vals:
+                    placeholders.append(f"${len(params) + 1}" if use_index else placeholder)
+                    params.append(val)
+                conditions.append(f'{col_expr} IN ({", ".join(placeholders)})')
+            elif op == "not_in":
+                vals = [x.strip() for x in str(v).split(",") if x.strip()]
+                if not vals:
+                    continue
+                placeholders = []
+                for val in vals:
+                    placeholders.append(f"${len(params) + 1}" if use_index else placeholder)
+                    params.append(val)
+                conditions.append(f'{col_expr} NOT IN ({", ".join(placeholders)})')
         
         if not conditions:
             return "", []

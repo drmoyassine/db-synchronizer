@@ -430,7 +430,10 @@ class WordPressRestAdapter(WordPressBaseApiAdapter):
         """Check if a record matches all filters."""
         for f in filter_list:
             field, target_val, op = f.get("field"), f.get("value"), f.get("operator", "==")
-            if not field or target_val is None or target_val == "":
+            
+            # Skip if field is missing.
+            # Skip if target_val is missing UNLESS it's an empty check operator.
+            if not field or (target_val is None or target_val == "") and op not in ["is_empty", "is_not_empty"]:
                 continue
             
             # Get nested field value using dot notation
@@ -451,6 +454,24 @@ class WordPressRestAdapter(WordPressBaseApiAdapter):
                 return False
             elif op == "contains" and target_str not in actual_str:
                 return False
+            elif op == "starts_with" and not actual_str.startswith(target_str):
+                return False
+            elif op == "ends_with" and not actual_str.endswith(target_str):
+                return False
+            elif op == "is_empty":
+                if actual_val is not None and str(actual_val) != "":
+                    return False
+            elif op == "is_not_empty":
+                if actual_val is None or str(actual_val) == "":
+                    return False
+            elif op == "in":
+                vals = [x.strip().lower() for x in str(target_val).split(",") if x.strip()]
+                if actual_str not in vals:
+                    return False
+            elif op == "not_in":
+                vals = [x.strip().lower() for x in str(target_val).split(",") if x.strip()]
+                if actual_str in vals:
+                    return False
             elif op in [">", "<"]:
                 try:
                     if op == ">":
@@ -630,6 +651,21 @@ class WordPressRestAdapter(WordPressBaseApiAdapter):
             await cache_set(None, cache_key, final_count, ttl=ttl)
             
         return final_count
+    
+    async def search_records(
+        self,
+        table: str,
+        query: str,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Search across records using WordPress's built-in search."""
+        # WordPress REST API has native search support
+        records = await self.read_records(
+            table,
+            where=[{"field": "search", "operator": "contains", "value": query}],
+            limit=limit
+        )
+        return records
 
 
 class WordPressGraphQLAdapter(WordPressBaseApiAdapter):
@@ -726,3 +762,12 @@ class WordPressGraphQLAdapter(WordPressBaseApiAdapter):
         where: Optional[Dict[str, Any]] = None,
     ) -> int:
         return 0 # GraphQL requires a specific plugin for total counts usually
+    
+    async def search_records(
+        self,
+        table: str,
+        query: str,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Search via GraphQL - not fully implemented yet."""
+        return []  # TODO: Implement GraphQL search

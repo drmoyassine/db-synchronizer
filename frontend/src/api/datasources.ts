@@ -1,6 +1,15 @@
 import { api } from './client'
 import { Datasource, TableSchema, DatasourceView } from '../types'
 
+export interface SearchMatch {
+    table: string;
+    datasource_id: string;
+    datasource_name: string;
+    record: Record<string, any>;
+    matched_fields: string[];
+    row_id: any;
+}
+
 export const datasourcesApi = {
     list: () => api.get<Datasource[]>('/api/datasources'),
     get: (id: string) => api.get<Datasource>(`/api/datasources/${id}`),
@@ -18,10 +27,10 @@ export const datasourcesApi = {
         }),
     refreshTableSchema: (id: string | number, table: string) =>
         api.get<TableSchema>(`/api/datasources/${id}/tables/${table}/schema`, { params: { refresh: true } }),
-    searchDatasource: (id: string | number, q: string) =>
-        api.get<any[]>(`/api/datasources/${id}/search`, { params: { q } }),
-    searchAll: (q: string) =>
-        api.get<any[]>('/api/datasources/search-all', { params: { q } }),
+    searchDatasource: (id: string | number, q: string, detailed?: boolean, limit?: number) =>
+        api.get<SearchMatch[]>(`/api/datasources/${id}/search`, { params: { q, detailed, limit } }),
+    searchAll: (q: string, detailed?: boolean, limit?: number) =>
+        api.get<SearchMatch[]>('/api/datasources/search-all', { params: { q, detailed, limit } }),
     saveSession: (id: string | number, table: string, data: any) =>
         api.post(`/api/datasources/${id}/tables/${table}/session`, data),
     getSession: (id: string | number, table: string) =>

@@ -462,6 +462,8 @@ async def get_datasource_table_data(
 async def search_datasource_tables(
     datasource_id: str,
     q: str,
+    detailed: bool = False,
+    limit: int = 10,
     db: AsyncSession = Depends(get_db)
 ):
     """Search for a string across all tables in a specific datasource."""
@@ -476,15 +478,42 @@ async def search_datasource_tables(
         adapter = get_adapter(datasource)
         async with adapter:
             tables = await adapter.get_tables()
-            for table in tables:
-                count = await adapter.count_records(table, where=[{"field": "search", "operator": "contains", "value": q}])
-                if count > 0:
-                    matches.append({
-                        "table": table,
-                        "datasource_id": datasource_id,
-                        "datasource_name": datasource.name,
-                        "count": count
-                    })
+            
+            if detailed:
+                # Return detailed results with row data
+                for table in tables:
+                    try:
+                        records = await adapter.search_records(table, q, limit=limit)
+                        for record in records:
+                            # Find which fields matched
+                            matched_fields = _find_matched_fields(record, q)
+                            if matched_fields:
+                                matches.append({
+                                    "table": table,
+                                    "datasource_id": datasource_id,
+                                    "datasource_name": datasource.name,
+                                    "record": record,
+                                    "matched_fields": matched_fields,
+                                    "row_id": _extract_row_id(record)
+                                })
+                    except Exception as e:
+                        logger.warning(f"Error searching table {table}: {str(e)}")
+                        continue
+            else:
+                # Original count-based implementation
+                for table in tables:
+                    try:
+                        count = await adapter.count_records(table, where=[{"field": "search", "operator": "contains", "value": q}])
+                        if count > 0:
+                            matches.append({
+                                "table": table,
+                                "datasource_id": datasource_id,
+                                "datasource_name": datasource.name,
+                                "count": count
+                            })
+                    except Exception as e:
+                        logger.warning(f"Error counting in table {table}: {str(e)}")
+                        continue
         return matches
     except Exception as e:
         logger.error(f"Error searching datasource {datasource_id}: {str(e)}")
@@ -494,6 +523,8 @@ async def search_datasource_tables(
 @router.get("/search-all")
 async def search_all_datasources(
     q: str,
+    detailed: bool = False,
+    limit: int = 10,
     db: AsyncSession = Depends(get_db)
 ):
     """Search for a string across all tables in ALL datasources."""
@@ -506,20 +537,65 @@ async def search_all_datasources(
             adapter = get_adapter(ds)
             async with adapter:
                 tables = await adapter.get_tables()
-                for table in tables:
-                    count = await adapter.count_records(table, where=[{"field": "search", "operator": "contains", "value": q}])
-                    if count > 0:
-                        all_matches.append({
-                            "table": table,
-                            "datasource_id": str(ds.id),
-                            "datasource_name": ds.name,
-                            "count": count
-                        })
+                
+                if detailed:
+                    # Return detailed results with row data
+                    for table in tables:
+                        try:
+                            records = await adapter.search_records(table, q, limit=limit)
+                            for record in records:
+                                # Find which fields matched
+                                matched_fields = _find_matched_fields(record, q)
+                                if matched_fields:
+                                    all_matches.append({
+                                        "table": table,
+                                        "datasource_id": str(ds.id),
+                                        "datasource_name": ds.name,
+                                        "record": record,
+                                        "matched_fields": matched_fields,
+                                        "row_id": _extract_row_id(record)
+                                    })
+                        except Exception as e:
+                            logger.warning(f"Error searching table {table} in {ds.name}: {str(e)}")
+                            continue
+                else:
+                    # Original count-based implementation
+                    for table in tables:
+                        try:
+                            count = await adapter.count_records(table, where=[{"field": "search", "operator": "contains", "value": q}])
+                            if count > 0:
+                                all_matches.append({
+                                    "table": table,
+                                    "datasource_id": str(ds.id),
+                                    "datasource_name": ds.name,
+                                    "count": count
+                                })
+                        except Exception as e:
+                            logger.warning(f"Error counting in table {table}: {str(e)}")
+                            continue
         except Exception as e:
             logger.warning(f"Skipping search for datasource {ds.id}: {str(e)}")
             continue
             
     return all_matches
+
+
+def _find_matched_fields(record: Dict[str, Any], query: str) -> List[str]:
+    """Identify which fields in the record match the search query."""
+    matched = []
+    query_lower = query.lower()
+    for field, value in record.items():
+        if value is not None:
+            str_val = str(value).lower()
+            if query_lower in str_val:
+                matched.append(field)
+    return matched
+
+def _extract_row_id(record: Dict[str, Any]) -> Any:
+    """Extract a row identifier from the record (try id, then first field)."""
+    if "id" in record:
+        return record["id"]
+    return list(record.values())[0] if record else None
 
 
 def _get_error_suggestion(e: Exception) -> Optional[str]:
@@ -533,6 +609,8 @@ def _get_error_suggestion(e: Exception) -> Optional[str]:
         return "Authentication failed. Verify your username and password are correct for remote access."
     if "timeout" in msg:
         return "The connection timed out. Check your firewall settings and ensure the server is listening on the correct port."
+    if "'nonetype' object has no attribute 'group'" in msg or "authentication" in msg:
+        return "This is a known issue with asyncpg during the authentication handshake. If using Supabase/Neon, ensure you are using the DIRECT port (5432) instead of the pooled port (6543), as the pooler sometimes interferes with the SASL handshake."
     return None
 
 
