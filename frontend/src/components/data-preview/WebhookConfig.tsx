@@ -10,7 +10,7 @@ interface WebhookConfigProps {
     setEditingWebhookIndex: React.Dispatch<React.SetStateAction<number | null>>;
     isWebhookModalOpen: boolean;
     setIsWebhookModalOpen: (isOpen: boolean) => void;
-    triggerWebhookTest: (viewId: string) => Promise<void>;
+    triggerWebhookTest: (viewId: string) => Promise<any>;
     currentViewId?: string;
 }
 

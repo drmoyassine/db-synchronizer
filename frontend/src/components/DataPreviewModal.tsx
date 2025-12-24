@@ -127,13 +127,13 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = (props) => {
         datasourceId,
         table,
         datasourceName,
-        onViewSaved,
-        viewId,
-        initialFilters,
+        onViewSaved: _onViewSaved,
+        viewId: _viewId,
+        initialFilters: _initialFilters,
         initialViewName,
     } = props; const { state, data, actions } = useDataPreview(props);
     const {
-        filters, appliedFilters, viewName, currentViewId, isSaving, isColumnsDropdownOpen, columnSearch,
+        filters, appliedFilters: _appliedFilters, viewName, currentViewId, isSaving, isColumnsDropdownOpen, columnSearch,
         showSaveForm, showSyncConfirm, saveSuccess, activeTab, globalSearch, dataSearchQuery, isDataSearching,
         showDataSearchResults, isRenamingView, globalSearchStatus, globalResults,
         isSessionLoading, copySuccess, selectedTable, tableSearch, editingRecord, fieldMappings, linkedViews,
@@ -153,7 +153,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = (props) => {
         setGlobalResults, setSelectedTable,
         setTableSearch, setEditingRecord, setFieldMappings, setLinkedViews, setWebhooks, setCurrentStep,
         setIsSidebarCollapsed, setIsWebhookModalOpen, setEditingWebhookIndex, setWebhookForm,
-        setAllMatches, setColumnOrder, setVisibleColumns, togglePin, toggleVisibility, setCurrentMatchIndex,
+        setAllMatches, setColumnOrder, setVisibleColumns, togglePin, toggleVisibility, setCurrentMatchIndex: _setCurrentMatchIndex,
         handleNextMatch, handlePrevMatch, copyToClipboard, addFilter, removeFilter, updateFilter,
         runRemoteSearch, searchOtherCollections, searchAllDatasources, handleSaveView, handleManualUpdate,
         handleDataSearch, refreshSchemaMutation, triggerWebhookTest

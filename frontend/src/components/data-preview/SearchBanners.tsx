@@ -1,5 +1,5 @@
 import { SearchResult } from '../../types/data-preview';
-import { Search, RotateCcw, Database, Globe, Wifi, CheckCircle, ChevronRight, RefreshCw, Loader2 } from 'lucide-react';
+import { Search, Database, Globe, CheckCircle, ChevronRight, RefreshCw, Loader2 } from 'lucide-react';
 import React from 'react';
 
 interface SearchBannersProps {
