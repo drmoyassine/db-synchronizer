@@ -36,8 +36,6 @@ export const useDataPreview = ({
     const [activeTab, setActiveTab] = useState<'table' | 'record' | 'linked' | 'api' | 'webhooks'>('table');
     const [globalSearch, setGlobalSearch] = useState('');
     const [dataSearchQuery, setDataSearchQuery] = useState('');
-    const [isDataSearching, setIsDataSearching] = useState(false);
-    const [dataSearchResults, setDataSearchResults] = useState<{ table: string; count: number }[]>([]);
     const [showDataSearchResults, setShowDataSearchResults] = useState(false);
     const [isRenamingView, setIsRenamingView] = useState(false);
     const [globalSearchStatus, setGlobalSearchStatus] = useState<'idle' | 'searching_datasource' | 'searching_all'>('idle');
@@ -108,6 +106,13 @@ export const useDataPreview = ({
         staleTime: 1000 * 60 * 10, // 10 minutes cache for data by default
     });
 
+    const { data: searchResults, isFetching: isSearchingByQuery } = useQuery({
+        queryKey: ['datasourceSearch', datasourceId, dataSearchQuery],
+        queryFn: () => datasourcesApi.searchDatasource(datasourceId, dataSearchQuery).then(r => r.data),
+        enabled: isOpen && !!datasourceId && showDataSearchResults && !!dataSearchQuery.trim(),
+        staleTime: 1000 * 60 * 5, // Cache search results for 5 minutes
+    });
+
     // Memos
     const availableFields = useMemo(() => {
         const fieldsSet = new Set<string>();
@@ -157,9 +162,13 @@ export const useDataPreview = ({
     }, [availableFields, columnOrder, pinnedColumns, visibleColumns, globalSearch, data]);
 
     const groupedMatches = useMemo(() => {
-        if (!showDataSearchResults || !dataSearchResults.length) return {};
-        return dataSearchResults.reduce((acc, curr) => ({ ...acc, [curr.table]: curr.count }), {} as Record<string, number>);
-    }, [showDataSearchResults, dataSearchResults]);
+        if (!showDataSearchResults || !searchResults?.length) return {};
+        const counts = searchResults.reduce((acc: any, m: any) => {
+            acc[m.table] = (acc[m.table] || 0) + (m.count || 1);
+            return acc;
+        }, {});
+        return counts;
+    }, [showDataSearchResults, searchResults]);
 
     const filteredTables = useMemo(() => {
         let results = (tables || []);
@@ -170,13 +179,13 @@ export const useDataPreview = ({
         }
 
         // 2. If global data search is active, show only tables with matches
-        if (showDataSearchResults && dataSearchResults.length > 0) {
-            const tableWithMatches = new Set(dataSearchResults.map(d => d.table));
+        if (showDataSearchResults && searchResults && searchResults.length > 0) {
+            const tableWithMatches = new Set(searchResults.map(d => d.table));
             results = results.filter((t: string) => tableWithMatches.has(t));
         }
 
         return results;
-    }, [tables, tableSearch, showDataSearchResults, dataSearchResults]);
+    }, [tables, tableSearch, showDataSearchResults, searchResults]);
 
     const filteredRecords = useMemo(() => {
         if (!data?.records) return [];
@@ -378,7 +387,9 @@ export const useDataPreview = ({
             onViewSaved?.(response.data);
             setTimeout(() => setSaveSuccess(false), 5000);
 
-            await datasourcesApi.clearSession(datasourceId, selectedTable);
+            if (selectedTable) {
+                await datasourcesApi.clearSession(datasourceId, selectedTable);
+            }
         } catch (err) {
             console.error('Error saving view:', err);
         } finally {
@@ -392,7 +403,9 @@ export const useDataPreview = ({
         try {
             setIsSessionLoading(true);
 
-            await datasourcesApi.clearSession(datasourceId, selectedTable);
+            if (selectedTable) {
+                await datasourcesApi.clearSession(datasourceId, selectedTable);
+            }
             clearTableCache(String(datasourceId), selectedTable);
 
             queryClient.removeQueries({ queryKey: ['tableData', datasourceId, selectedTable] });
@@ -437,26 +450,9 @@ export const useDataPreview = ({
         }
     };
 
-    const handleDataSearch = async () => {
+    const handleDataSearch = () => {
         if (!dataSearchQuery.trim()) return;
-
-        setIsDataSearching(true);
-        try {
-            const response = await datasourcesApi.searchDatasource(datasourceId, dataSearchQuery);
-            if (response.data) {
-                const counts = response.data.reduce((acc: any, m: any) => {
-                    acc[m.table] = (acc[m.table] || 0) + 1;
-                    return acc;
-                }, {});
-                const summary = Object.entries(counts).map(([table, count]) => ({ table, count: count as number }));
-                setDataSearchResults(summary);
-                setShowDataSearchResults(true);
-            }
-        } catch (err) {
-            console.error('Data search failed:', err);
-        } finally {
-            setIsDataSearching(false);
-        }
+        setShowDataSearchResults(true);
     };
 
     const refreshSchemaMutation = useMutation({
@@ -485,39 +481,41 @@ export const useDataPreview = ({
 
             setIsSessionLoading(true);
             try {
-                const { data: sessionData } = await datasourcesApi.getSession(datasourceId, table);
-                if (sessionData && Object.keys(sessionData).length > 0) {
-                    const nextFilters = sessionData.filters || [];
-                    if (JSON.stringify(appliedFilters) !== JSON.stringify(nextFilters)) {
-                        setFilters(nextFilters);
-                        setAppliedFilters(nextFilters);
+                if (table) {
+                    const { data: sessionData } = await datasourcesApi.getSession(datasourceId, table);
+                    if (sessionData && Object.keys(sessionData).length > 0) {
+                        const nextFilters = sessionData.filters || [];
+                        if (JSON.stringify(appliedFilters) !== JSON.stringify(nextFilters)) {
+                            setFilters(nextFilters);
+                            setAppliedFilters(nextFilters);
+                        }
+
+                        setFieldMappings(sessionData.fieldMappings || {});
+
+                        initializeLayout({
+                            pinnedColumns: sessionData.pinnedColumns,
+                            columnOrder: sessionData.columnOrder,
+                            visibleColumns: sessionData.visibleColumns,
+                        });
+
+                        if (viewId) {
+                            setCurrentViewId(viewId);
+                            setCurrentStep('records');
+                            setIsSidebarCollapsed(true);
+                        } else if (table) {
+                            setCurrentViewId(undefined);
+                            setCurrentStep('records');
+                            setIsSidebarCollapsed(false);
+                        } else {
+                            setCurrentViewId(undefined);
+                            setCurrentStep('tables');
+                            setIsSidebarCollapsed(false);
+                        }
+
+                        setIsSessionLoading(false);
+                        lastProcessedConfig.current = currentPropsKey;
+                        return;
                     }
-
-                    setFieldMappings(sessionData.fieldMappings || {});
-
-                    initializeLayout({
-                        pinnedColumns: sessionData.pinnedColumns,
-                        columnOrder: sessionData.columnOrder,
-                        visibleColumns: sessionData.visibleColumns,
-                    });
-
-                    if (viewId) {
-                        setCurrentViewId(viewId);
-                        setCurrentStep('records');
-                        setIsSidebarCollapsed(true);
-                    } else if (table) {
-                        setCurrentViewId(undefined);
-                        setCurrentStep('records');
-                        setIsSidebarCollapsed(false);
-                    } else {
-                        setCurrentViewId(undefined);
-                        setCurrentStep('tables');
-                        setIsSidebarCollapsed(false);
-                    }
-
-                    setIsSessionLoading(false);
-                    lastProcessedConfig.current = currentPropsKey;
-                    return;
                 }
             } catch (err) {
                 console.warn("Failed to load Redis session:", err);
@@ -564,6 +562,7 @@ export const useDataPreview = ({
         if (!isOpen || !datasourceId || !selectedTable || isSessionLoading) return;
 
         const syncToRedis = async () => {
+            if (!selectedTable) return;
             try {
                 await datasourcesApi.saveSession(datasourceId, selectedTable, {
                     pinnedColumns,
@@ -596,20 +595,20 @@ export const useDataPreview = ({
     return {
         state: {
             filters, appliedFilters, viewName, currentViewId, isSaving, isColumnsDropdownOpen, columnSearch,
-            showSaveForm, showSyncConfirm, saveSuccess, activeTab, globalSearch, dataSearchQuery, isDataSearching,
-            dataSearchResults, showDataSearchResults, isRenamingView, globalSearchStatus, globalResults,
+            showSaveForm, showSyncConfirm, saveSuccess, activeTab, globalSearch, dataSearchQuery,
+            showDataSearchResults, isRenamingView, globalSearchStatus, globalResults,
             isSessionLoading, copySuccess, selectedTable, tableSearch, editingRecord, fieldMappings, linkedViews,
             webhooks, currentStep, isSidebarCollapsed, isWebhookModalOpen, editingWebhookIndex, webhookForm,
             currentMatchIndex, allMatches, pinnedColumns, columnOrder, visibleColumns
         },
         data: {
             tables, schemaData, tableData: data, isLoading, error, isFetchingData, availableFields, tableColumns,
-            groupedMatches, filteredTables, filteredRecords
+            groupedMatches, filteredTables, filteredRecords, isDataSearching: isSearchingByQuery, searchResults
         },
         actions: {
             setFilters, setAppliedFilters, setViewName, setCurrentViewId, setIsSaving, setIsColumnsDropdownOpen,
             setColumnSearch, setShowSaveForm, setShowSyncConfirm, setSaveSuccess, setActiveTab, setGlobalSearch,
-            setDataSearchQuery, setIsDataSearching, setDataSearchResults, setShowDataSearchResults, setIsRenamingView,
+            setDataSearchQuery, setShowDataSearchResults, setIsRenamingView,
             setGlobalSearchStatus, setGlobalResults, setIsSessionLoading, setCopySuccess, setSelectedTable,
             setTableSearch, setEditingRecord, setFieldMappings, setLinkedViews, setWebhooks, setCurrentStep,
             setIsSidebarCollapsed, setIsWebhookModalOpen, setEditingWebhookIndex, setWebhookForm, setCurrentMatchIndex,

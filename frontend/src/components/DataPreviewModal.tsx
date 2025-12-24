@@ -134,7 +134,7 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = (props) => {
     } = props; const { state, data, actions } = useDataPreview(props);
     const {
         filters, appliedFilters: _appliedFilters, viewName, currentViewId, isSaving, isColumnsDropdownOpen, columnSearch,
-        showSaveForm, showSyncConfirm, saveSuccess, activeTab, globalSearch, dataSearchQuery, isDataSearching,
+        showSaveForm, showSyncConfirm, saveSuccess, activeTab, globalSearch, dataSearchQuery,
         showDataSearchResults, isRenamingView, globalSearchStatus, globalResults,
         isSessionLoading, copySuccess, selectedTable, tableSearch, editingRecord, fieldMappings, linkedViews,
         webhooks, currentStep, isSidebarCollapsed, isWebhookModalOpen, editingWebhookIndex, webhookForm,
@@ -143,13 +143,13 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = (props) => {
 
     const {
         tables, schemaData, tableData, isLoading, error, isFetchingData, availableFields, tableColumns,
-        groupedMatches, filteredTables, filteredRecords
+        groupedMatches, filteredTables, filteredRecords, isDataSearching
     } = data;
 
     const {
         setFilters, setAppliedFilters, setViewName, setIsColumnsDropdownOpen,
         setColumnSearch, setShowSaveForm, setShowSyncConfirm, setActiveTab, setGlobalSearch,
-        setDataSearchQuery, setDataSearchResults, setShowDataSearchResults, setIsRenamingView,
+        setDataSearchQuery, setShowDataSearchResults, setIsRenamingView,
         setGlobalResults, setSelectedTable,
         setTableSearch, setEditingRecord, setFieldMappings, setLinkedViews, setWebhooks, setCurrentStep,
         setIsSidebarCollapsed, setIsWebhookModalOpen, setEditingWebhookIndex, setWebhookForm,
@@ -403,7 +403,6 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = (props) => {
                             isDataSearching={isDataSearching}
                             showDataSearchResults={showDataSearchResults}
                             setShowDataSearchResults={setShowDataSearchResults}
-                            setDataSearchResults={setDataSearchResults}
                             filteredTables={filteredTables}
                             groupedMatches={groupedMatches}
                             setSelectedTable={setSelectedTable}

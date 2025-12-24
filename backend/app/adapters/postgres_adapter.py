@@ -223,6 +223,25 @@ class PostgresAdapter(SQLAdapter):
         async with self._pool.acquire() as conn:
             return await conn.fetchval(query, *params)
     
+    async def count_search_matches(self, table: str, query: str) -> int:
+        """Count records matching search query across all columns."""
+        schema = await self.get_schema(table)
+        columns = [col["name"] for col in schema["columns"]]
+        if not columns:
+            return 0
+            
+        conditions = []
+        params = []
+        for i, col in enumerate(columns, 1):
+            conditions.append(f'CAST("{col}" AS TEXT) LIKE ${i}')
+            params.append(f"%{query}%")
+            
+        where_clause = " OR ".join(conditions)
+        sql = f'SELECT COUNT(*) FROM "{table}" WHERE {where_clause}'
+        
+        async with self._pool.acquire() as conn:
+            return await conn.fetchval(sql, *params)
+
     async def search_records(
         self,
         table: str,

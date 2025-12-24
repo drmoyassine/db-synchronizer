@@ -651,7 +651,6 @@ class WordPressRestAdapter(WordPressBaseApiAdapter):
             await cache_set(None, cache_key, final_count, ttl=ttl)
             
         return final_count
-    
     async def search_records(
         self,
         table: str,
@@ -666,6 +665,13 @@ class WordPressRestAdapter(WordPressBaseApiAdapter):
             limit=limit
         )
         return records
+
+    async def count_search_matches(self, table: str, query: str) -> int:
+        """Count matches using WordPress's search support."""
+        return await self.count_records(
+            table,
+            where=[{"field": "search", "operator": "contains", "value": query}]
+        )
 
 
 class WordPressGraphQLAdapter(WordPressBaseApiAdapter):
@@ -771,3 +777,7 @@ class WordPressGraphQLAdapter(WordPressBaseApiAdapter):
     ) -> List[Dict[str, Any]]:
         """Search via GraphQL - not fully implemented yet."""
         return []  # TODO: Implement GraphQL search
+
+    async def count_search_matches(self, table: str, query: str) -> int:
+        """Count via GraphQL - not implemented yet."""
+        return 0

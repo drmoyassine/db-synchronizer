@@ -500,20 +500,27 @@ async def search_datasource_tables(
                         logger.warning(f"Error searching table {table}: {str(e)}")
                         continue
             else:
-                # Original count-based implementation
-                for table in tables:
-                    try:
-                        count = await adapter.count_records(table, where=[{"field": "search", "operator": "contains", "value": q}])
-                        if count > 0:
-                            matches.append({
-                                "table": table,
-                                "datasource_id": datasource_id,
-                                "datasource_name": datasource.name,
-                                "count": count
-                            })
-                    except Exception as e:
-                        logger.warning(f"Error counting in table {table}: {str(e)}")
-                        continue
+                # Parallel count-based implementation
+                import asyncio
+                sem = asyncio.Semaphore(10) # Process 10 tables at a time
+                
+                async def search_table(table_name):
+                    async with sem:
+                        try:
+                            count = await adapter.count_search_matches(table_name, q)
+                            if count > 0:
+                                return {
+                                    "table": table_name,
+                                    "datasource_id": datasource_id,
+                                    "datasource_name": datasource.name,
+                                    "count": count
+                                }
+                        except Exception as e:
+                            logger.warning(f"Error counting in table {table_name}: {str(e)}")
+                        return None
+                
+                results = await asyncio.gather(*(search_table(t) for t in tables))
+                matches = [r for r in results if r]
         return matches
     except Exception as e:
         logger.error(f"Error searching datasource {datasource_id}: {str(e)}")
@@ -559,20 +566,27 @@ async def search_all_datasources(
                             logger.warning(f"Error searching table {table} in {ds.name}: {str(e)}")
                             continue
                 else:
-                    # Original count-based implementation
-                    for table in tables:
-                        try:
-                            count = await adapter.count_records(table, where=[{"field": "search", "operator": "contains", "value": q}])
-                            if count > 0:
-                                all_matches.append({
-                                    "table": table,
-                                    "datasource_id": str(ds.id),
-                                    "datasource_name": ds.name,
-                                    "count": count
-                                })
-                        except Exception as e:
-                            logger.warning(f"Error counting in table {table}: {str(e)}")
-                            continue
+                    # Parallel count-based implementation per datasource
+                    import asyncio
+                    sem = asyncio.Semaphore(10)
+                    
+                    async def search_table_in_ds(t_name):
+                        async with sem:
+                            try:
+                                count = await adapter.count_search_matches(t_name, q)
+                                if count > 0:
+                                    return {
+                                        "table": t_name,
+                                        "datasource_id": str(ds.id),
+                                        "datasource_name": ds.name,
+                                        "count": count
+                                    }
+                            except Exception as e:
+                                logger.warning(f"Error counting in table {t_name}: {str(e)}")
+                            return None
+
+                    results = await asyncio.gather(*(search_table_in_ds(t) for t in tables))
+                    all_matches.extend([r for r in results if r])
         except Exception as e:
             logger.warning(f"Skipping search for datasource {ds.id}: {str(e)}")
             continue

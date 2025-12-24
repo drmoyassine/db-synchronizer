@@ -10,7 +10,6 @@ interface TableSelectionViewProps {
     isDataSearching: boolean;
     showDataSearchResults: boolean;
     setShowDataSearchResults: (show: boolean) => void;
-    setDataSearchResults: (results: any[]) => void;
     filteredTables: string[];
     groupedMatches: Record<string, number>;
     setSelectedTable: (table: string) => void;
@@ -29,7 +28,6 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = ({
     isDataSearching,
     showDataSearchResults,
     setShowDataSearchResults,
-    setDataSearchResults,
     filteredTables,
     groupedMatches,
     setSelectedTable,
@@ -76,7 +74,6 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = ({
                         <button
                             onClick={() => {
                                 setShowDataSearchResults(false);
-                                setDataSearchResults([]);
                                 setDataSearchQuery('');
                             }}
                             className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all"
@@ -129,6 +126,6 @@ export const TableSelectionView: React.FC<TableSelectionViewProps> = ({
                     );
                 })}
             </div>
-        </div>
+        </div >
     );
 };

@@ -98,6 +98,13 @@ class DatabaseAdapter(ABC):
         Returns records that match the search query.
         """
         pass
+
+    @abstractmethod
+    async def count_search_matches(self, table: str, query: str) -> int:
+        """
+        Count records that match the query string across search-supported columns.
+        """
+        pass
     
     async def __aenter__(self):
         """Async context manager entry."""
@@ -217,3 +224,27 @@ class SQLAdapter(DatabaseAdapter, ABC):
             return "", []
             
         return " WHERE " + " AND ".join(conditions), params
+
+    async def count_search_matches(self, table: str, query: str) -> int:
+        """
+        Default implementation for SQL adapters: search across all columns.
+        """
+        schema = await self.get_schema(table)
+        columns = [col["name"] for col in schema["columns"]]
+        if not columns:
+            return 0
+            
+        conditions = []
+        params = []
+        for col in columns:
+            # We use CAST(col AS TEXT) to avoid type errors in Postgres/MySQL
+            conditions.append(f'CAST("{col}" AS TEXT) LIKE %s')
+            params.append(f"%{query}%")
+            
+        where_clause = " OR ".join(conditions)
+        sql = f'SELECT COUNT(*) FROM "{table}" WHERE {where_clause}'
+        
+        # Note: subclasses might need to override this if they use differently formatted placeholders
+        # Or if they need a connection pool specifically.
+        # This is a generic implementation.
+        return 0 # Subclasses SHOULD override this to use their connection

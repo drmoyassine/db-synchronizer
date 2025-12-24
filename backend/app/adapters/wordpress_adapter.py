@@ -140,6 +140,46 @@ class WordPressAdapter(SQLAdapter):
             
         return query, params
 
+    async def count_search_matches(self, table: str, query: str) -> int:
+        """
+        Count records matching search query. Optimized for WordPress.
+        """
+        sql = f"SELECT COUNT(*) FROM `{table}` WHERE "
+        params = []
+        
+        is_posts = (table == f"{self._prefix}posts")
+        is_users = (table == f"{self._prefix}users")
+        
+        if is_posts:
+            sql += "(post_title LIKE %s OR post_content LIKE %s)"
+            params.extend([f"%{query}%", f"%{query}%"])
+        elif is_users:
+            sql += "(user_login LIKE %s OR user_email LIKE %s OR display_name LIKE %s)"
+            params.extend([f"%{query}%", f"%{query}%", f"%{query}%"])
+        else:
+            try:
+                schema = await self.get_schema(table)
+                # Only search in string-like columns to avoid errors and improve performance
+                cols = [c["name"] for c in schema["columns"] if any(t in c["type"].lower() for t in ["char", "text", "string"])]
+                
+                if not cols: return 0
+                
+                # Limit number of columns to search to avoid extremely long queries
+                max_cols = 15
+                search_cols = cols[:max_cols]
+                
+                conditions = [f"`{c}` LIKE %s" for c in search_cols]
+                sql += " OR ".join(conditions)
+                params.extend([f"%{query}%"] * len(search_cols))
+            except Exception:
+                return 0
+        
+        async with self._pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(sql, params)
+                row = await cur.fetchone()
+                return row[0] if row else 0
+
     async def search_records(self, table: str, query: str) -> List[Dict[str, Any]]:
         """
         Search for records by text content. 
@@ -151,19 +191,35 @@ class WordPressAdapter(SQLAdapter):
         sql = f"SELECT * FROM `{table}` {t_alias} WHERE "
         params = []
         
+        is_posts = (table == f"{self._prefix}posts")
+        is_users = (table == f"{self._prefix}users")
+        
         # Build search conditions - target common text columns
         # In a generic SQL adapter, we might need schema info to know which columns are text
         # For WP, we know the schema roughly
-        if "posts" in table:
+        if is_posts:
             sql += f"({t_alias}.post_title LIKE %s OR {t_alias}.post_content LIKE %s)"
             params.extend([f"%{query}%", f"%{query}%"])
-        elif "users" in table:
+        elif is_users:
              sql += f"({t_alias}.user_login LIKE %s OR {t_alias}.user_email LIKE %s OR {t_alias}.display_name LIKE %s)"
              params.extend([f"%{query}%", f"%{query}%", f"%{query}%"])   
         else:
-             # Fallback for other tables - search all char/text columns? 
-             # For now, simplistic fallback
-             sql += "1=0" # No search implemented for generic tables yet
+             # Fallback for other tables - search text-like columns
+             try:
+                 schema = await self.get_schema(table)
+                 cols = [c["name"] for c in schema["columns"] if any(t in c["type"].lower() for t in ["char", "text", "string"])]
+                 
+                 if not cols:
+                     return []
+                     
+                 # Limit number of columns to search
+                 max_cols = 15
+                 search_cols = cols[:max_cols]
+                 
+                 sql += " OR ".join([f"{t_alias}.`{c}` LIKE %s" for c in search_cols])
+                 params.extend([f"%{query}%"] * len(search_cols))
+             except Exception:
+                 return []
              
         limit = 50
         sql += f" LIMIT {limit}"

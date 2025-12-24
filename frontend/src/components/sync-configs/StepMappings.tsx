@@ -57,16 +57,18 @@ export const StepMappings: React.FC<StepMappingsProps> = ({
             </div>
 
             <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 pb-4">
-                {fieldMappings.map((mapping, index) => (
+                {(fieldMappings || []).map((mapping, index) => (
                     <div key={index} className="flex gap-4 items-center bg-white dark:bg-gray-800/50 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm group hover:border-primary-200 transition-all">
                         <div className="flex-1">
                             <select
-                                value={mapping.master_column}
+                                value={mapping.master_column || ''}
                                 onChange={(e) => onUpdateMapping(index, 'master_column', e.target.value)}
                                 className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900/80 border border-gray-100 dark:border-gray-700 rounded-xl outline-none focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 transition-all font-bold text-xs"
                             >
                                 <option value="">Master field...</option>
-                                {masterSchema?.columns.map((c: any) => <option key={c.name} value={c.name}>{c.name} ({c.type})</option>)}
+                                {(masterSchema?.columns || []).map((c: any) => (
+                                    <option key={c.name} value={c.name}>{c.name} ({c.type})</option>
+                                ))}
                             </select>
                         </div>
                         <div className="text-primary-600">
@@ -74,12 +76,14 @@ export const StepMappings: React.FC<StepMappingsProps> = ({
                         </div>
                         <div className="flex-1">
                             <select
-                                value={mapping.slave_column}
+                                value={mapping.slave_column || ''}
                                 onChange={(e) => onUpdateMapping(index, 'slave_column', e.target.value)}
                                 className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-900/80 border border-gray-100 dark:border-gray-700 rounded-xl outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all font-bold text-xs"
                             >
                                 <option value="">Slave field...</option>
-                                {slaveSchema?.columns.map((c: any) => <option key={c.name} value={c.name}>{c.name} ({c.type})</option>)}
+                                {(slaveSchema?.columns || []).map((c: any) => (
+                                    <option key={c.name} value={c.name}>{c.name} ({c.type})</option>
+                                ))}
                             </select>
                         </div>
                         <div className="flex-[1.5]">

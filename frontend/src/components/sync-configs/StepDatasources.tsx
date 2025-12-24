@@ -47,14 +47,14 @@ export const StepDatasources: React.FC<StepDatasourcesProps> = ({
                             <div>
                                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5 ml-1">Datasource</label>
                                 <select
-                                    value={formData.master_datasource_id}
+                                    value={formData.master_datasource_id || ''}
                                     onChange={(e) => onChange({ master_datasource_id: e.target.value, master_table: '', master_view_id: null })}
                                     className="w-full px-4 py-3 bg-white dark:bg-gray-900/80 border border-gray-100 dark:border-gray-700 rounded-xl outline-none focus:ring-4 focus:ring-primary-500/10 focus:border-primary-500 transition-all font-bold text-sm"
                                     required
                                 >
                                     <option value="">Select source...</option>
                                     {datasources.map(ds => (
-                                        <option key={ds.id} value={ds.id}>{ds.name}</option>
+                                        <option key={ds.id} value={String(ds.id)}>{ds.name}</option>
                                     ))}
                                 </select>
                             </div>
@@ -76,7 +76,7 @@ export const StepDatasources: React.FC<StepDatasourcesProps> = ({
                                     )}
                                 </div>
                                 <select
-                                    value={formData.master_view_id || formData.master_table}
+                                    value={formData.master_view_id || formData.master_table || ''}
                                     onChange={(e) => {
                                         const val = e.target.value;
                                         const view = masterViews?.find(v => v.id === val);
@@ -96,7 +96,11 @@ export const StepDatasources: React.FC<StepDatasourcesProps> = ({
                                         </optgroup>
                                     )}
                                     <optgroup label="Tables / Resources">
-                                        {masterTables?.map(t => <option key={t} value={t}>{t}</option>)}
+                                        {masterTables && masterTables.length > 0 ? (
+                                            masterTables.map(t => <option key={t} value={t}>{t}</option>)
+                                        ) : (
+                                            <option disabled>No tables found</option>
+                                        )}
                                     </optgroup>
                                 </select>
                             </div>
@@ -114,14 +118,14 @@ export const StepDatasources: React.FC<StepDatasourcesProps> = ({
                             <div>
                                 <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1.5 ml-1">Datasource</label>
                                 <select
-                                    value={formData.slave_datasource_id}
+                                    value={formData.slave_datasource_id || ''}
                                     onChange={(e) => onChange({ slave_datasource_id: e.target.value, slave_table: '', slave_view_id: null })}
                                     className="w-full px-4 py-3 bg-white dark:bg-gray-900/80 border border-gray-100 dark:border-gray-700 rounded-xl outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-500 transition-all font-bold text-sm"
                                     required
                                 >
                                     <option value="">Select target...</option>
                                     {datasources.map(ds => (
-                                        <option key={ds.id} value={ds.id}>{ds.name}</option>
+                                        <option key={ds.id} value={String(ds.id)}>{ds.name}</option>
                                     ))}
                                 </select>
                             </div>
@@ -143,7 +147,7 @@ export const StepDatasources: React.FC<StepDatasourcesProps> = ({
                                     )}
                                 </div>
                                 <select
-                                    value={formData.slave_view_id || formData.slave_table}
+                                    value={formData.slave_view_id || formData.slave_table || ''}
                                     onChange={(e) => {
                                         const val = e.target.value;
                                         const view = slaveViews?.find(v => v.id === val);
@@ -163,7 +167,11 @@ export const StepDatasources: React.FC<StepDatasourcesProps> = ({
                                         </optgroup>
                                     )}
                                     <optgroup label="Tables / Resources">
-                                        {slaveTables?.map(t => <option key={t} value={t}>{t}</option>)}
+                                        {slaveTables && slaveTables.length > 0 ? (
+                                            slaveTables.map(t => <option key={t} value={t}>{t}</option>)
+                                        ) : (
+                                            <option disabled>No tables found</option>
+                                        )}
                                     </optgroup>
                                 </select>
                             </div>
