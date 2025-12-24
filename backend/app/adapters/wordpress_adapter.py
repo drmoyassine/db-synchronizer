@@ -140,6 +140,39 @@ class WordPressAdapter(SQLAdapter):
             
         return query, params
 
+    async def search_records(self, table: str, query: str) -> List[Dict[str, Any]]:
+        """
+        Search for records by text content. 
+        For WordPress, we search post_title and post_content.
+        """
+        # Determine table alias
+        t_alias = "t"
+        
+        sql = f"SELECT * FROM `{table}` {t_alias} WHERE "
+        params = []
+        
+        # Build search conditions - target common text columns
+        # In a generic SQL adapter, we might need schema info to know which columns are text
+        # For WP, we know the schema roughly
+        if "posts" in table:
+            sql += f"({t_alias}.post_title LIKE %s OR {t_alias}.post_content LIKE %s)"
+            params.extend([f"%{query}%", f"%{query}%"])
+        elif "users" in table:
+             sql += f"({t_alias}.user_login LIKE %s OR {t_alias}.user_email LIKE %s OR {t_alias}.display_name LIKE %s)"
+             params.extend([f"%{query}%", f"%{query}%", f"%{query}%"])   
+        else:
+             # Fallback for other tables - search all char/text columns? 
+             # For now, simplistic fallback
+             sql += "1=0" # No search implemented for generic tables yet
+             
+        limit = 50
+        sql += f" LIMIT {limit}"
+        
+        async with self._pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute(sql, params)
+                return await cur.fetchall()
+
     async def read_records(
         self,
         table: str,
