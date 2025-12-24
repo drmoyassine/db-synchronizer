@@ -124,8 +124,8 @@ const DataPreviewModal: React.FC<DataPreviewModalProps> = (props) => {
     const {
         isOpen,
         onClose,
-        datasourceId,
-        table,
+        datasourceId: _datasourceId,
+        table: _table,
         datasourceName,
         onViewSaved: _onViewSaved,
         viewId: _viewId,
